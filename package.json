@@ -1,0 +1,10 @@
+{
+  "name": "JSRandomTester",
+  "version": "0.0.0",
+  "description": "Tool to create random tests for Javascript Projects using Typescript definitions",
+  "main": "app.js",
+  "dependencies": {
+    "typescript": "2.0.0",
+    "npm": "3.10.5"
+  }
+}
