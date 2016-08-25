@@ -5,6 +5,10 @@
 const fs = require('fs');
 
 module.exports = {
+    isObjectEmpty: function (obj) {
+        return Object.keys(obj).length === 0 && obj.constructor === Object;
+    },
+
     randomInt: function (low, high)
     {
     return Math.floor(Math.random() * (high - low) + low);

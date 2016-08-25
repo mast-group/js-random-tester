@@ -2,35 +2,35 @@
  * Created by Pankajan on 21/07/2016.
  */
 var util = require('./util.js');
+var parser = require('./definitionParser');
 
-definitionFiles = util.getFiles('/Users/Pankajan/Edinburgh/Source/DefinitelyTyped', false, ['includeFolders', 'onlyFolders', 'onlyNames']);
+var functionsList = parser.getFunctions('ace', 'ace');
+var module = require('d3');
 
-var exec = require('child_process').exec,
-    child;
+var libraryNames = util.getFiles('/Users/Pankajan/Edinburgh/Source/JSRandomTester/node_modules', false, ['includeFolders', 'onlyFolders', 'onlyNames']);
 
-var totalProjects = 0;
 var accessibleProjects = 0;
 
-for (var i in definitionFiles) {
-    totalProjects++;
-    var module_name = definitionFiles[i].toLowerCase();
+for (var i in libraryNames) {
+    try{
+        var module_name = libraryNames[i].toLowerCase();
+        if(module_name === 'backbone') {
+            //console.log("processing " + module_name);
+            try {
+                module = require(module_name);
 
-    child = exec('npm install ' + module_name,
-        function (error, stdout, stderr) {
-            console.log('stdout: ' + stdout);
-            console.log('stderr: ' + stderr);
-            if (error === null) {
-                //Success scenario
-                var module;
-                try {
-                    module = require(module_name);
-                    accessibleProjects++;
-                } catch (e) {
-                    console.log('Unable to parse ' + module_name)
-                }
+                accessibleProjects++;
+            } catch (e) {
+                console.log('Unable to parse ' + module_name)
             }
-        });
-}
+        }
+    } catch (e) {
 
-console.log('Total Projects : '+ totalProjects);
-console.log('Accessible Projects : '+ accessibleProjects);
+    }
+}
+printResults();
+
+function printResults() {
+    console.log('Total Projects : ' + libraryNames.length);
+    console.log('Accessible Projects : ' + accessibleProjects);
+}
