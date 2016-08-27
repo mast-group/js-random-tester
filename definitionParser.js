@@ -118,7 +118,7 @@ function isKindKeyword(kind) {
 function isKindParameter(kind) {
     return kind === ts.SyntaxKind.Parameter;
 }
-function getClassInterfaceRecursively(roots){
+function getClassInterfaceRecursively(roots) {
     return getKindRecurse(isClassInterfaceRecursively, roots);
 }
 function getNamespaceDeclarations(roots) {
@@ -231,14 +231,23 @@ function isParameter(node) {
 }
 
 
-function extractFunctions(mbs, currentResult, availableClasses, indent) {
+function extractFunctions(mbs, currentResult, indent) {
     indent = indent || ' ';
     currentResult = currentResult || {
-            arguments:{
-                boolean:0,string:0,number:0, any:0, array:0, class:0, complex:0, totalSimple:0, totalAvailable:0, totalComplex:0
+            arguments: {
+                boolean: 0,
+                string: 0,
+                number: 0,
+                any: 0,
+                array: 0,
+                class: 0,
+                complex: 0,
+                totalSimple: 0,
+                totalAvailable: 0,
+                totalComplex: 0
             },
-            variables:{
-                boolean:0,string:0,number:0, any:0, array:0, class:0, complex:0
+            variables: {
+                boolean: 0, string: 0, number: 0, any: 0, array: 0, class: 0, complex: 0
             }
         };
     var fds = getFunctionDeclarations(mbs);
@@ -288,7 +297,7 @@ function extractFunctions(mbs, currentResult, availableClasses, indent) {
                 }
                 if (totalSimple === 0) {
                     currentResult.arguments.totalSimple += 1;
-                } else if (totalSimple === 1){
+                } else if (totalSimple === 1) {
                     currentResult.arguments.totalComplex += 1;
                 } else {
                     currentResult.arguments.totalAvailable += 1;
@@ -301,15 +310,42 @@ function extractFunctions(mbs, currentResult, availableClasses, indent) {
 }
 
 var currentResults = {
-    arguments:{
-        boolean:0,string:0,number:0, any:0, array:0, class:0, complex:0, totalSimple:0, totalAvailable:0, totalComplex:0
+    arguments: {
+        boolean: 0,
+        string: 0,
+        number: 0,
+        any: 0,
+        array: 0,
+        class: 0,
+        complex: 0,
+        totalSimple: 0,
+        totalAvailable: 0,
+        totalComplex: 0
     },
-    variables:{
-        boolean:0,string:0,number:0, any:0, array:0, class:0, complex:0
+    variables: {
+        boolean: 0, string: 0, number: 0, any: 0, array: 0, class: 0, complex: 0
     }
 };
 
 var processedProjects = 0;
+function getProperNode(cn, mbs, exportVariables, vd, sf) {
+    var currentNode = cn;
+    for (var i = 0; i < exportVariables.length; i++) {
+        if (exportVariables[i] !== undefined) {
+            var currentVar = exportVariables[i].split('.');
+            for (var j = 0; j < currentVar.length; j++) {
+                if (j === 0) {
+                    currentNode = detectExportedModule(currentVar[j], mbs, vd, sf);
+                } else {
+                    if (currentNode !== undefined) {
+                        currentNode = detectExportedModule(currentVar[j], [currentNode]);
+                    }
+                }
+            }
+        }
+    }
+    return currentNode;
+}
 function processFile(project, filename) {
     var result = {};
     try {
@@ -329,50 +365,75 @@ function processFile(project, filename) {
 
         var validModules = [];
 
+        var totalClassInterface = getClassInterfaceRecursively([sf]);
+
+        //PropertySignature = 144,
+        //CallSignature = 151,
+        //MethodSignature = 146,
+        var definedClasses = {};
+        for (var i = 0; i < totalClassInterface.length; i++) {
+            var curClass = totalClassInterface[i];
+            var propSig = getPropertySignatures([curClass]);
+            var definedProperties = {};
+            for (var j = 0; j < propSig.length; j++) {
+                var curProp = propSig[j];
+                var propvalues = {};
+                propvalues['optional'] = curProp.questionToken !== undefined;
+                propvalues['type'] = getTypeForProperty(source, curProp);
+                definedProperties[curProp.name.text] = propvalues;
+            }
+            definedClasses[curClass.name.text] = definedProperties
+        }
+
         ea.map(function (dd) {
+            if(dd.expression.text===undefined) {
+                console.log();
+            }
             exportVariables.push(dd.expression.text);
         });
-        if(exportVariables.length === 0) {
+        if (exportVariables.length === 0) {
             var vs = getVariableStatements([sf]);
             vs.map(function (dd) {
                 var varDeclared = dd.declarationList.declarations[0].type;
+                if(source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end)===undefined) {
+                    console.log();
+                }
                 exportVariables.push(source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end));
             });
         }
+        var currentNode = getProperNode(mbs, mbs, exportVariables, vd, sf);
 
-        var currentNode = mbs;
-        for (var i = 0; i < exportVariables.length; i++) {
-            var currentVar = exportVariables[i].split('.');
-            for (var j = 0; j < currentVar.length; j++) {
-                if(j===0) {
-
-                }
+        while (currentNode.kind === ts.SyntaxKind.VariableDeclaration) {
+            var varDeclared = currentNode.type;
+            exportVariables = [];
+            if(source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end)===undefined) {
+                console.log();
             }
+            exportVariables.push(source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end));
+            currentNode = getProperNode([currentNode], mbs, exportVariables, vd, sf);
         }
 
-
-
-
-        var availableClasses = getClassInterfaceRecursively(mbs);
-
-        extractFunctions(validModules, currentResults, availableClasses);
+        if (currentNode.kind === ts.SyntaxKind.ModuleDeclaration)
+            extractFunctions(getModuleBlocks([currentNode]), currentResults);
+        else
+            extractFunctions([currentNode], currentResults);
 
         processedProjects++;
         //console.log(exportVariablesMap);
 
-/**
-        var subMds = getModulesDeclarations(mbs);
-        subMds.map(function (md) {
+        /**
+         var subMds = getModulesDeclarations(mbs);
+         subMds.map(function (md) {
             return md.name.text;
         }).sort().forEach(function (nm) {
             if (PRINT_DEBUG) return console.log(nm);
         });
-        if (PRINT_DEBUG) console.log('\n# Functions');
-//        extractFunctions(mbs, currentResult, '');
+         if (PRINT_DEBUG) console.log('\n# Functions');
+         //        extractFunctions(mbs, currentResult, '');
 
-        if (PRINT_DEBUG) console.log('\n# Enums');
-        var eds = getEnumDeclarations(mbs);
-        eds.map(function (ed) {
+         if (PRINT_DEBUG) console.log('\n# Enums');
+         var eds = getEnumDeclarations(mbs);
+         eds.map(function (ed) {
             if (PRINT_DEBUG) console.log(ed.name.text);
             var ems = getEnumMembers([ed]);
             ems.forEach(function (em) {
@@ -383,9 +444,9 @@ function processFile(project, filename) {
                 });
             });
         });
-        if (PRINT_DEBUG) console.log('\n# Interfaces');
-        var ifds = getInterfaceDeclarations(mbs);
-        ifds.map(function (ifd) {
+         if (PRINT_DEBUG) console.log('\n# Interfaces');
+         var ifds = getInterfaceDeclarations(mbs);
+         ifds.map(function (ifd) {
             if (PRINT_DEBUG || PRINT_METHODS) console.log(ifd.name.text);
             extractFunctions([ifd], currentResult, '     ');
             var tps = getTypeParameters([ifd]);
@@ -405,11 +466,11 @@ function processFile(project, filename) {
             });
         });
 
-        if (PRINT_DEBUG) console.log('\n# Variables');
-        var vbs = getVariableStatements(mbs);
-        var vdls = getVariableDeclarationLists(vbs);
-        var vds = getVariableDeclarations(vdls);
-        vds.map(function (vd) {
+         if (PRINT_DEBUG) console.log('\n# Variables');
+         var vbs = getVariableStatements(mbs);
+         var vdls = getVariableDeclarationLists(vbs);
+         var vds = getVariableDeclarations(vdls);
+         vds.map(function (vd) {
             printIdentifiers([vd], '');
             var keyTypes = printType(vd, '  ');
             for (var i = 0; i < keyTypes.length; i++) {
@@ -435,12 +496,12 @@ function processFile(project, filename) {
                 }
             }
         });
-        if (WRITE_FILE) {
+         if (WRITE_FILE) {
             fs.appendFile('message.txt', JSON.stringify(currentResult) + ',', function (err) {
 
             });
         }
- */
+         */
 
         /*if(currentResult.arguments.totalSimple>5) {
          console.log(currentResult);
@@ -451,78 +512,173 @@ function processFile(project, filename) {
     }
 }
 
-function detectExportedModule(currentVar, mbs, ) {
-    vd.map(function (svd) {
-        svd.declarationList.declarations.forEach(function (vd) {
-            var variableName = vd.name.text;
-            if(currentVar  === variableName) {
-                exportVariablesMap[variableName] = vd.type.typeName.text;
-                validModules.push(vd);
-            }
-        })
-    });
+function detectExportedModule(currentVar, mbs, vd, sf) {
+    var suitableModule;
 
-
-    if(util.isObjectEmpty(exportVariablesMap)) {
-        getVariableStatements(mbs).map(function (svd) {
+    if (vd !== undefined) {
+        vd.map(function (svd) {
             svd.declarationList.declarations.forEach(function (vd) {
                 var variableName = vd.name.text;
-                if(currentVar  === variableName) {
-                    exportVariablesMap[variableName] = vd.type.typeName.text;
-                    validModules.push(vd);
+                if (currentVar === variableName) {
+                    suitableModule = vd;
                 }
             })
         });
     }
 
-    if(util.isObjectEmpty(exportVariablesMap)) {
+    if (suitableModule === undefined) {
+        getVariableStatements(mbs).map(function (svd) {
+            svd.declarationList.declarations.forEach(function (vd) {
+                var variableName = vd.name.text;
+                if (currentVar === variableName) {
+                    suitableModule = vd;
+                }
+            })
+        });
+    }
+
+    if (suitableModule === undefined) {
         getFunctionDeclarations(mbs).map(function (sfd) {
             var variableName = sfd.name.text;
-            if(currentVar  === variableName) {
-                exportVariablesMap[variableName] = variableName;
-                validModules.push(sfd);
+            if (currentVar === variableName) {
+                suitableModule = sfd;
             }
         });
     }
 
-    if(util.isObjectEmpty(exportVariablesMap)) {
+    if (suitableModule === undefined) {
         getInterfaceDeclarations(mbs).map(function (sfd) {
             var variableName = sfd.name.text;
-            if(currentVar  === variableName) {
-                exportVariablesMap[variableName] = variableName;
-                validModules.push(sfd);
+            if (currentVar === variableName) {
+                suitableModule = sfd;
             }
         });
     }
 
-    if(util.isObjectEmpty(exportVariablesMap)) {
+    if (suitableModule === undefined) {
         getNamespaceDeclarations(mbs).map(function (sfd) {
             var variableName = sfd.name.text;
-            if(currentVar  === variableName) {
-                exportVariablesMap[variableName] = variableName;
-                validModules.push(sfd);
+            if (currentVar === variableName) {
+                suitableModule = sfd;
             }
         });
     }
 
-    if(util.isObjectEmpty(exportVariablesMap)) {
+    if (suitableModule === undefined) {
         getClassDeclarations(mbs).map(function (sfd) {
             var variableName = sfd.name.text;
-            if(currentVar  === variableName) {
-                exportVariablesMap[variableName] = variableName;
-                validModules.push(sfd);
+            if (currentVar === variableName) {
+                suitableModule = sfd;
             }
         });
     }
 
-    if(util.isObjectEmpty(exportVariablesMap)) {
-        mds.map(function (sfd) {
+    if (sf !== undefined && suitableModule === undefined) {
+        getModulesDeclarations([sf]).map(function (sfd) {
             var variableName = sfd.name.text;
-            if(currentVar  === variableName) {
-                exportVariablesMap[variableName] = variableName;
-                validModules.push(sfd.body);
+            if (currentVar === variableName) {
+                if (suitableModule === undefined)
+                    suitableModule = sfd;
+                else if (suitableModule.body.statements.length < sfd.body.statements.length) {
+                    suitableModule = sfd;
+                }
             }
         });
+    }
+
+    if (sf !== undefined && suitableModule === undefined) {
+        getInterfaceDeclarations([sf]).map(function (sfd) {
+            var variableName = sfd.name.text;
+            if (currentVar === variableName) {
+                if (suitableModule === undefined)
+                    suitableModule = sfd;
+                else if (suitableModule.members.length < sfd.members.length) {
+                    suitableModule = sfd;
+                }
+            }
+        });
+    }
+    return suitableModule;
+}
+
+function getTypeForProperty(source, node) {
+    var results = {object: false, array: false, function: false, properties: {}}
+    var prop;
+    if (node.type.kind === ts.SyntaxKind.FunctionType) {
+        //Function type. Complex so just mark as function and skip
+        prop = 'function';
+        results.function = true;
+    } else {
+        var tokenValue = ts.tokenToString(node.type.kind);
+        if (tokenValue === undefined) {
+            //token value undefined so complex type. Further analyse
+            if (node.type.members !== undefined) {
+                //TODO: if object recursively call this method
+                results.object = true;
+                prop = {};
+                var members = node.type.members;
+                for (var i = 0; i < members.length; i++) {
+                    prop[members[i].name.text] = getTypeForProperty(source, members[i]);
+                }
+            } else {
+                var eleType = node.type;
+                if (node.type.kind === ts.SyntaxKind.ArrayType) {
+                    //Array type detected
+                    results.array = true;
+                    eleType = node.type.elementType;
+                }
+                var typeName = eleType.typeName;
+
+                if (typeName === undefined) {
+                    //If type name is undefined then it should be multiple types (ex obj1 | obj2)
+                    var types = eleType.types;
+                    if (results.object) types = eleType;
+                    if (types === undefined) {
+                        //TODO Remove
+                        console.log();
+                    }
+                    prop = [];
+                    if (types === undefined) {
+                        console.log();
+                    }
+                    for (var i = 0; i < types.length; i++) {
+                        //Multiple types. Loop every one
+                        var curType = types[i];
+                        tokenValue = ts.tokenToString(curType.kind);
+                        if (tokenValue === undefined) {
+                            typeName = curType.typeName;
+                            if (typeName === undefined) {
+                                //TODO Remove
+                                console.log();
+                            }
+                            var tmp = source.substring(ts.skipTrivia(source, typeName.pos), typeName.end);
+                            //Currently not focusing on fully qualified name and assuming last part of the name is enough
+                            if (tmp === undefined) {
+                                console.log();
+                            }
+                            tmp = tmp.split(".");
+                            tmp = tmp[tmp.length - 1];
+                            prop.push(tmp);
+                        } else {
+                            //Simple type.
+                            prop.push(tokenValue);
+                        }
+                    }
+                } else {
+                    prop = source.substring(ts.skipTrivia(source, typeName.pos), typeName.end);
+                    if (prop === undefined) {
+                        console.log();
+                    }
+                    prop = prop.split(".");
+                    prop = prop[prop.length - 1];
+                }
+            }
+        } else {
+            //Simple type
+            prop = tokenValue;
+        }
+        results.properties = prop;
+        return results;
     }
 }
 
