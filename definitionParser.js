@@ -73,6 +73,9 @@ function isKindEnumMember(kind) {
 function isKindFunctionDeclaration(kind) {
     return kind === ts.SyntaxKind.FunctionDeclaration || kind === ts.SyntaxKind.MethodDeclaration || kind === ts.SyntaxKind.MethodSignature;
 }
+function isKindConstructSignature(kind) {
+    return kind === ts.SyntaxKind.ConstructSignature || kind === ts.SyntaxKind.Constructor;
+}
 function isKindExportAssignment(kind) {
     return kind === ts.SyntaxKind.ExportAssignment;
 }
@@ -147,6 +150,9 @@ function getEnumMembers(roots) {
 }
 function getFunctionDeclarations(roots) {
     return getKind(isKindFunctionDeclaration, roots);
+}
+function getConstructSignatures(roots) {
+    return getKind(isKindConstructSignature, roots);
 }
 function getExportAssigments(roots) {
     return getKind(isKindExportAssignment, roots);
@@ -230,106 +236,51 @@ function isParameter(node) {
     return isKindParameter(node.kind);
 }
 
+/**
+ * Function to extract functions/constructors from given node
+ * @param mbs
+ * @param isFunctions
+ * @returns {Array}
+ */
+function extractFunctions(mbs, isFunctions) {
+    var fds;
+    if(isFunctions)
+        fds = getFunctionDeclarations(mbs);
+    else
+        fds = getConstructSignatures(mbs);
 
-function extractFunctions(mbs, currentResult, indent) {
-    indent = indent || ' ';
-    currentResult = currentResult || {
-            arguments: {
-                boolean: 0,
-                string: 0,
-                number: 0,
-                any: 0,
-                array: 0,
-                class: 0,
-                complex: 0,
-                totalSimple: 0,
-                totalAvailable: 0,
-                totalComplex: 0
-            },
-            variables: {
-                boolean: 0, string: 0, number: 0, any: 0, array: 0, class: 0, complex: 0
-            }
-        };
-    var fds = getFunctionDeclarations(mbs);
+    var result = [];
     fds.map(function (fd) {
-        if (fd.name !== undefined) {
-            if (PRINT_DEBUG || PRINT_METHODS) process.stdout.write(indent + fd.name.text);
-            printReturnType(fd, '  returns ');
+        if (fd.name !== undefined || !isFunctions) {
             var pds = getParameters([fd]);
+            var returnType = 'void';
+            if (fd.type) {
+                returnType = getTypeForProperty(fd.type, fd);
+            }
+            var params = {};
             pds.forEach(function (pd) {
-                printText(pd.name, '  parameter ');
-                var parameterType = printReturnType(pd, '    ');
-                if (PRINT_DEBUG || PRINT_METHODS) process.stdout.write(' - ' + parameterType);
-                if (parameterType.startsWith('array') && parameterType.includes('-')) {
-                    currentResult.arguments.array += 1;
-                    parameterType = parameterType.split('-')[1];
-                }
-                if (parameterType.includes('-')) {
-                    parameterType = parameterType.split('-')[1];
-                }
-                var totalSimple = 0;
-                switch (parameterType) {
-                    case 'boolean':
-                        currentResult.arguments.boolean += 1;
-                        break;
-                    case 'string':
-                        currentResult.arguments.string += 1;
-                        break;
-                    case 'number':
-                        currentResult.arguments.number += 1;
-                        break;
-                    case 'any':
-                        currentResult.arguments.any += 1;
-                        break;
-                    case 'array':
-                        currentResult.arguments.array += 1;
-                        totalSimple = 1;
-                        break;
-                    case 'union_basic':
-                        break;
-                    case 'complex':
-                        currentResult.arguments.complex += 1;
-                        totalSimple = 1;
-                        break;
-                    default:
-                        currentResult.arguments.class += 1;
-                        totalSimple = 2;
-                }
-                if (totalSimple === 0) {
-                    currentResult.arguments.totalSimple += 1;
-                } else if (totalSimple === 1) {
-                    currentResult.arguments.totalComplex += 1;
-                } else {
-                    currentResult.arguments.totalAvailable += 1;
-                }
+                params[pd.name.text] = getVariableType(pd.type, pd.questionToken===undefined)
             });
-            if (PRINT_DEBUG || PRINT_METHODS) process.stdout.write('\n');
+            if(isFunctions)
+                result.push({name: fd.name.text, arguments: params, returnType: returnType});
+            else
+                result.push({name: 'constructor', arguments: params, returnType: returnType});
         }
     });
-    return currentResult;
+    return result;
 }
 
-var currentResults = {
-    arguments: {
-        boolean: 0,
-        string: 0,
-        number: 0,
-        any: 0,
-        array: 0,
-        class: 0,
-        complex: 0,
-        totalSimple: 0,
-        totalAvailable: 0,
-        totalComplex: 0
-    },
-    variables: {
-        boolean: 0, string: 0, number: 0, any: 0, array: 0, class: 0, complex: 0
-    }
-};
-
-var processedProjects = 0;
+/**
+ * Extract proper node objects for given variable names
+ * @param cn
+ * @param mbs
+ * @param exportVariables
+ * @param vd
+ * @param sf
+ * @returns {*[]}
+ */
 function getProperNode(cn, mbs, exportVariables, vd, sf) {
-    var currentNode = cn;
+    var currentNode = [cn];
     for (var i = 0; i < exportVariables.length; i++) {
         if (exportVariables[i] !== undefined) {
             var currentVar = exportVariables[i].split('.');
@@ -337,8 +288,8 @@ function getProperNode(cn, mbs, exportVariables, vd, sf) {
                 if (j === 0) {
                     currentNode = detectExportedModule(currentVar[j], mbs, vd, sf);
                 } else {
-                    if (currentNode !== undefined) {
-                        currentNode = detectExportedModule(currentVar[j], [currentNode]);
+                    if (currentNode.length>0) {
+                        currentNode = detectExportedModule(currentVar[j], currentNode);
                     }
                 }
             }
@@ -346,12 +297,20 @@ function getProperNode(cn, mbs, exportVariables, vd, sf) {
     }
     return currentNode;
 }
+//Global variable to store current source code text
+var source;
+
+/**
+ * Main method to process given file
+ * @param project
+ * @param filename
+ */
 function processFile(project, filename) {
     var result = {};
     try {
         console.log('File >>> ' + filename);
 
-        var source = String(fs.readFileSync(filename));
+        source = String(fs.readFileSync(filename));
         var sf = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest);
 
         var mds = getModulesDeclarations([sf]);
@@ -361,32 +320,32 @@ function processFile(project, filename) {
         var ea = getExportAssigments(mbs);
 
         var exportVariables = [];
-        var exportVariablesMap = {};
-
-        var validModules = [];
 
         var totalClassInterface = getClassInterfaceRecursively([sf]);
 
-        //PropertySignature = 144,
-        //CallSignature = 151,
-        //MethodSignature = 146,
-        var definedClasses = {};
+        var definedClasses = [];
         for (var i = 0; i < totalClassInterface.length; i++) {
             var curClass = totalClassInterface[i];
+            var constructors = extractFunctions([curClass], false);
             var propSig = getPropertySignatures([curClass]);
+            var definedClass = {name: curClass.name.text};
             var definedProperties = {};
+            console.log(curClass.name.text);
             for (var j = 0; j < propSig.length; j++) {
                 var curProp = propSig[j];
                 var propvalues = {};
                 propvalues['optional'] = curProp.questionToken !== undefined;
-                propvalues['type'] = getTypeForProperty(source, curProp);
+                console.log('        ' + curProp.name.text);
+                propvalues['type'] = getTypeForProperty(curProp.type, curProp);
                 definedProperties[curProp.name.text] = propvalues;
             }
-            definedClasses[curClass.name.text] = definedProperties
+            definedClass['properties'] = definedProperties;
+            definedClass['constructors'] = constructors;
+            definedClasses.push(definedClass);
         }
 
         ea.map(function (dd) {
-            if(dd.expression.text===undefined) {
+            if (dd.expression.text === undefined) {
                 console.log();
             }
             exportVariables.push(dd.expression.text);
@@ -395,468 +354,240 @@ function processFile(project, filename) {
             var vs = getVariableStatements([sf]);
             vs.map(function (dd) {
                 var varDeclared = dd.declarationList.declarations[0].type;
-                if(source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end)===undefined) {
+                if (source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end) === undefined) {
                     console.log();
                 }
                 exportVariables.push(source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end));
             });
         }
-        var currentNode = getProperNode(mbs, mbs, exportVariables, vd, sf);
-
-        while (currentNode.kind === ts.SyntaxKind.VariableDeclaration) {
-            var varDeclared = currentNode.type;
-            exportVariables = [];
-            if(source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end)===undefined) {
-                console.log();
-            }
-            exportVariables.push(source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end));
-            currentNode = getProperNode([currentNode], mbs, exportVariables, vd, sf);
-        }
-
-        if (currentNode.kind === ts.SyntaxKind.ModuleDeclaration)
-            extractFunctions(getModuleBlocks([currentNode]), currentResults);
-        else
-            extractFunctions([currentNode], currentResults);
-
-        processedProjects++;
-        //console.log(exportVariablesMap);
-
-        /**
-         var subMds = getModulesDeclarations(mbs);
-         subMds.map(function (md) {
-            return md.name.text;
-        }).sort().forEach(function (nm) {
-            if (PRINT_DEBUG) return console.log(nm);
-        });
-         if (PRINT_DEBUG) console.log('\n# Functions');
-         //        extractFunctions(mbs, currentResult, '');
-
-         if (PRINT_DEBUG) console.log('\n# Enums');
-         var eds = getEnumDeclarations(mbs);
-         eds.map(function (ed) {
-            if (PRINT_DEBUG) console.log(ed.name.text);
-            var ems = getEnumMembers([ed]);
-            ems.forEach(function (em) {
-                printText(em.name, '  ');
-                var lts = getLiteralTokens([em]);
-                lts.forEach(function (lt) {
-                    return printText(lt, '    = ');
-                });
-            });
-        });
-         if (PRINT_DEBUG) console.log('\n# Interfaces');
-         var ifds = getInterfaceDeclarations(mbs);
-         ifds.map(function (ifd) {
-            if (PRINT_DEBUG || PRINT_METHODS) console.log(ifd.name.text);
-            extractFunctions([ifd], currentResult, '     ');
-            var tps = getTypeParameters([ifd]);
-            tps.forEach(function (tp) {
-                if (PRINT_DEBUG) console.log('  of ' + tp.name.text);
-            });
-            var hcs = getHeritageClauses([ifd]);
-            var ewtas = getExpressionWithTypeArguments(hcs);
-            ewtas.forEach(function (ewta) {
-                printIdentifiers([ewta], '  ');
-                printTypeReferences([ewta], '    ');
-            });
-            var pss = getPropertySignatures([ifd]);
-            pss.forEach(function (ps) {
-                printText(ps.name, '  prop: ');
-                printType(ps, '    ');
-            });
-        });
-
-         if (PRINT_DEBUG) console.log('\n# Variables');
-         var vbs = getVariableStatements(mbs);
-         var vdls = getVariableDeclarationLists(vbs);
-         var vds = getVariableDeclarations(vdls);
-         vds.map(function (vd) {
-            printIdentifiers([vd], '');
-            var keyTypes = printType(vd, '  ');
-            for (var i = 0; i < keyTypes.length; i++) {
-                switch (keyTypes[i]) {
-                    case 'boolean':
-                        currentResult.variables.boolean += 1;
-                        break;
-                    case 'string':
-                        currentResult.variables.string += 1;
-                        break;
-                    case 'number':
-                        currentResult.variables.number += 1;
-                        break;
-                    case 'any':
-                        currentResult.variables.any += 1;
-                        break;
-                    case 'array':
-                        currentResult.variables.array += 1;
-                        break;
-                    default:
-                        currentResult.variables.complex += 1;
-                        break;
+        var tmpCurrentNodes = getProperNode(mbs, mbs, exportVariables, vd, sf);
+        var currentNode=[];
+        for(i=0; i<tmpCurrentNodes.length; i++) {
+            var tmp = tmpCurrentNodes[i];
+                while (tmp.kind === ts.SyntaxKind.VariableDeclaration) {
+                    var varDeclared = tmp.type;
+                    exportVariables = [];
+                    if (source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end) === undefined) {
+                        console.log();
+                    }
+                    exportVariables.push(source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end));
+                    tmp = getProperNode([tmp], mbs, exportVariables, vd, sf);
                 }
-            }
-        });
-         if (WRITE_FILE) {
-            fs.appendFile('message.txt', JSON.stringify(currentResult) + ',', function (err) {
-
-            });
+            if(tmp.length)
+                for(j=0; j<tmp.length; j++)
+                    currentNode.push(tmp[j]);
+            else
+                currentNode.push(tmp);
         }
-         */
 
-        /*if(currentResult.arguments.totalSimple>5) {
-         console.log(currentResult);
-         }*/
-        //printChildTypes(sf);
+        var methodNamesAndArguments = [];
+        var constructors = [];
+        for(i=0; i<currentNode.length;i++) {
+            var tmpMethodNamesAndArguments;
+            var tmpconstructors;
+            if (currentNode[i].kind === ts.SyntaxKind.ModuleDeclaration) {
+                tmpMethodNamesAndArguments = extractFunctions(getModuleBlocks([currentNode[i]]), true);
+                tmpconstructors = extractFunctions(getModuleBlocks([currentNode[i]]), false)
+            } else {
+                tmpMethodNamesAndArguments = extractFunctions([currentNode[i]], true);
+                tmpconstructors = extractFunctions([currentNode[i]], false)
+            }
+            for(j=0; j<tmpMethodNamesAndArguments.length; j++) {
+                methodNamesAndArguments.push(tmpMethodNamesAndArguments[j]);
+            }
+            for(j=0; j<tmpconstructors.length; j++) {
+                constructors.push(tmpconstructors[j]);
+            }
+        }
+        var finalResults = {};
+        finalResults['classes'] = definedClasses;
+        finalResults['methods'] = methodNamesAndArguments;
+        finalResults['constructors'] = constructors;
+        console.log(JSON.stringify(finalResults));
     } catch (err) {
+        console.log(err.stack);
         console.log('Unable to process : ' + filename);
     }
 }
 
+/**
+ * Method to identify initialized (globally accessible) module
+ * @param currentVar
+ * @param mbs
+ * @param vd
+ * @param sf
+ * @returns {Array}
+ */
 function detectExportedModule(currentVar, mbs, vd, sf) {
-    var suitableModule;
+    var suitableModule = [];
 
     if (vd !== undefined) {
         vd.map(function (svd) {
             svd.declarationList.declarations.forEach(function (vd) {
                 var variableName = vd.name.text;
                 if (currentVar === variableName) {
-                    suitableModule = vd;
+                    suitableModule.push(vd);
                 }
             })
         });
     }
 
-    if (suitableModule === undefined) {
-        getVariableStatements(mbs).map(function (svd) {
-            svd.declarationList.declarations.forEach(function (vd) {
-                var variableName = vd.name.text;
-                if (currentVar === variableName) {
-                    suitableModule = vd;
-                }
-            })
-        });
-    }
-
-    if (suitableModule === undefined) {
-        getFunctionDeclarations(mbs).map(function (sfd) {
-            var variableName = sfd.name.text;
+    getVariableStatements(mbs).map(function (svd) {
+        svd.declarationList.declarations.forEach(function (vd) {
+            var variableName = vd.name.text;
             if (currentVar === variableName) {
-                suitableModule = sfd;
+                suitableModule.push(vd);
             }
-        });
-    }
+        })
+    });
 
-    if (suitableModule === undefined) {
-        getInterfaceDeclarations(mbs).map(function (sfd) {
-            var variableName = sfd.name.text;
-            if (currentVar === variableName) {
-                suitableModule = sfd;
-            }
-        });
-    }
+    getFunctionDeclarations(mbs).map(function (sfd) {
+        var variableName = sfd.name.text;
+        if (currentVar === variableName) {
+            suitableModule.push(sfd);
+        }
+    });
 
-    if (suitableModule === undefined) {
-        getNamespaceDeclarations(mbs).map(function (sfd) {
-            var variableName = sfd.name.text;
-            if (currentVar === variableName) {
-                suitableModule = sfd;
-            }
-        });
-    }
+    getInterfaceDeclarations(mbs).map(function (sfd) {
+        var variableName = sfd.name.text;
+        if (currentVar === variableName) {
+            suitableModule.push(sfd);
+        }
+    });
 
-    if (suitableModule === undefined) {
-        getClassDeclarations(mbs).map(function (sfd) {
-            var variableName = sfd.name.text;
-            if (currentVar === variableName) {
-                suitableModule = sfd;
-            }
-        });
-    }
+    getNamespaceDeclarations(mbs).map(function (sfd) {
+        var variableName = sfd.name.text;
+        if (currentVar === variableName) {
+            suitableModule.push(sfd);
+        }
+    });
 
-    if (sf !== undefined && suitableModule === undefined) {
+    getClassDeclarations(mbs).map(function (sfd) {
+        var variableName = sfd.name.text;
+        if (currentVar === variableName) {
+            suitableModule.push(sfd);
+        }
+    });
+
+    if (sf !== undefined) {
         getModulesDeclarations([sf]).map(function (sfd) {
             var variableName = sfd.name.text;
             if (currentVar === variableName) {
-                if (suitableModule === undefined)
-                    suitableModule = sfd;
-                else if (suitableModule.body.statements.length < sfd.body.statements.length) {
-                    suitableModule = sfd;
-                }
+                suitableModule.push(sfd);
             }
         });
     }
 
-    if (sf !== undefined && suitableModule === undefined) {
+    if (sf !== undefined) {
         getInterfaceDeclarations([sf]).map(function (sfd) {
             var variableName = sfd.name.text;
             if (currentVar === variableName) {
-                if (suitableModule === undefined)
-                    suitableModule = sfd;
-                else if (suitableModule.members.length < sfd.members.length) {
-                    suitableModule = sfd;
-                }
+                suitableModule.push(sfd);
             }
         });
+    }
+    for (var i = 0; i < mbs.length; i++) {
+        if (mbs[i].body !== undefined) {
+            getInterfaceDeclarations([mbs[i].body]).map(function (sfd) {
+                var variableName = sfd.name.text;
+                if (currentVar === variableName) {
+                    suitableModule.push(sfd);
+                }
+            });
+        }
     }
     return suitableModule;
 }
 
-function getTypeForProperty(source, node) {
+/**
+ * Method to extract proper variable type for given node
+ * @param nodeType
+ * @param node
+ * @returns {{object: boolean, array: boolean, function: boolean, properties: {}}}
+ */
+function getTypeForProperty(nodeType, node) {
     var results = {object: false, array: false, function: false, properties: {}}
-    var prop;
-    if (node.type.kind === ts.SyntaxKind.FunctionType) {
+    var prop = {};
+    if (nodeType.kind === ts.SyntaxKind.FunctionType) {
         //Function type. Complex so just mark as function and skip
-        prop = 'function';
+        prop['kind'] = 'function';
         results.function = true;
+    } else if (nodeType.kind === ts.SyntaxKind.ArrayType) {
+        //Array type detected
+        results.array = true;
+        results.properties = {kind:'array', type:getTypeForProperty(nodeType.elementType, node)};
     } else {
-        var tokenValue = ts.tokenToString(node.type.kind);
+        var tokenValue = ts.tokenToString(nodeType.kind);
         if (tokenValue === undefined) {
             //token value undefined so complex type. Further analyse
-            if (node.type.members !== undefined) {
+            if(nodeType.text !== undefined) {
+                prop = {kind:'complex', type:nodeType.text};
+            }else if (nodeType.members !== undefined) {
                 //TODO: if object recursively call this method
                 results.object = true;
-                prop = {};
-                var members = node.type.members;
+                prop = {kind:'complex', type:{}};
+                var members = nodeType.members;
                 for (var i = 0; i < members.length; i++) {
-                    prop[members[i].name.text] = getTypeForProperty(source, members[i]);
+                    if (members[i].name !== undefined) {
+                        prop.type[members[i].name.text] = getTypeForProperty(members[i].type, node);
+                    }
                 }
+            } else if(nodeType.elementTypes!==undefined) {
+                prop = {kind: 'tuple', type:[]};
+                for (i = 0; i < nodeType.elementTypes.length; i++) {
+                    prop.type.push(getTypeForProperty(nodeType.elementTypes[i], node));
+                }
+            } else if(nodeType.types !== undefined) {
+                prop = {kind:'union', type:[]};
+                for (i = 0; i < nodeType.types.length; i++) {
+                    //Multiple types. Loop every one
+                    var curType = nodeType.types[i];
+                    prop.type.push(getTypeForProperty(curType))
+                }
+            }else if(nodeType.typeName !== undefined) {
+                var typeName = nodeType.typeName;
+                var tmpProp = source.substring(ts.skipTrivia(source, typeName.pos), typeName.end);
+                if (tmpProp === undefined) {
+                    console.log();
+                }
+                tmpProp = tmpProp.split(".");
+                prop = {kind:tmpProp[tmpProp.length - 1]};
             } else {
-                var eleType = node.type;
-                if (node.type.kind === ts.SyntaxKind.ArrayType) {
-                    //Array type detected
-                    results.array = true;
-                    eleType = node.type.elementType;
-                }
-                var typeName = eleType.typeName;
-
-                if (typeName === undefined) {
-                    //If type name is undefined then it should be multiple types (ex obj1 | obj2)
-                    var types = eleType.types;
-                    if (results.object) types = eleType;
-                    if (types === undefined) {
-                        //TODO Remove
-                        console.log();
-                    }
-                    prop = [];
-                    if (types === undefined) {
-                        console.log();
-                    }
-                    for (var i = 0; i < types.length; i++) {
-                        //Multiple types. Loop every one
-                        var curType = types[i];
-                        tokenValue = ts.tokenToString(curType.kind);
-                        if (tokenValue === undefined) {
-                            typeName = curType.typeName;
-                            if (typeName === undefined) {
-                                //TODO Remove
-                                console.log();
-                            }
-                            var tmp = source.substring(ts.skipTrivia(source, typeName.pos), typeName.end);
-                            //Currently not focusing on fully qualified name and assuming last part of the name is enough
-                            if (tmp === undefined) {
-                                console.log();
-                            }
-                            tmp = tmp.split(".");
-                            tmp = tmp[tmp.length - 1];
-                            prop.push(tmp);
-                        } else {
-                            //Simple type.
-                            prop.push(tokenValue);
-                        }
-                    }
-                } else {
-                    prop = source.substring(ts.skipTrivia(source, typeName.pos), typeName.end);
-                    if (prop === undefined) {
-                        console.log();
-                    }
-                    prop = prop.split(".");
-                    prop = prop[prop.length - 1];
-                }
+                console.log();
             }
         } else {
             //Simple type
-            prop = tokenValue;
+            prop ={kind:tokenValue};
         }
         results.properties = prop;
-        return results;
     }
+    return results;
 }
 
 exports.main = main;
 
-function printText(node, indent) {
-    if (isIdentifier(node))
-        if (PRINT_DEBUG) console.log(indent + node.text);
-        else if (isLiteralToken(node))
-            if (PRINT_DEBUG) console.log(indent + node.text);
-            else if (PRINT_DEBUG) console.log(indent + 'name kind ' + node.kind);
-}
-function printType(node, indent) {
-    printTypeReferences([node], indent);
-    var keywords = printKeywords([node], indent); // if simple types like string, bool
-    if (hasQuestionToken([node]))
-        if (PRINT_DEBUG) console.log(indent + '?');
-    return keywords;
-}
-function printIdentifiers(nodes, indent) {
-    var ids = getIdentifiers(nodes);
-    ids.forEach(function (id) {
-        if (PRINT_DEBUG) return console.log(indent + id.text);
-    });
-}
-function printTypeReferences(nodes, indent) {
-    var trs = getTypeReferences(nodes);
-    trs.forEach(function (tr) {
-        return printIdentifiers(trs, indent);
-    });
-}
-function printKeywords(nodes, indent) {
-    var resultList = [];
-    var kws = getKeywords(nodes);
-    kws.forEach(function (kw) {
-        switch (kw.kind) {
-            case ts.SyntaxKind.AnyKeyword:
-                if (PRINT_DEBUG) console.log(indent + 'any_type');
-                resultList.push('any');
-                break;
-            case ts.SyntaxKind.BooleanKeyword:
-                if (PRINT_DEBUG) console.log(indent + 'boolean');
-                resultList.push('boolean');
-                break;
-            case ts.SyntaxKind.StringKeyword:
-                if (PRINT_DEBUG) console.log(indent + 'string');
-                resultList.push('string');
-                break;
-            case ts.SyntaxKind.NumberKeyword:
-                if (PRINT_DEBUG) console.log(indent + 'number');
-                resultList.push('number');
-                break;
-            case ts.SyntaxKind.ArrayType:
-                if (PRINT_DEBUG) console.log(indent + 'array');
-                resultList.push('array');
-                break;
-            default:
-                if (PRINT_DEBUG) console.log(indent + ts.SyntaxKind[kw.kind]);
-                resultList.push('complex');
-        }
-    });
-    return resultList;
-}
-
-function printReturnType(node, indent) {
-    var tr = node;
-    if (tr.type === undefined) {
-        if (PRINT_DEBUG) console.log(indent + 'any');
-        return 'any';
+/**
+ * Util method to call 'getTypeForProperty' and build result object
+ * @param node
+ * @param isCompulsury
+ * @returns {{type: string, array: boolean, optional: boolean}}
+ */
+function getVariableType(node, isCompulsury) {
+    var currentNode = node;
+    var varType = {type: '', array: false, optional: !isCompulsury};
+    if (currentNode === undefined) {
+        varType.type = 'any';
     }
-    var currentNode = tr.type;
-    var returnType = '';
-    var baseReturnType = '';
-    var currentKind = tr.type.kind;
+    var currentKind = currentNode.kind;
     if (ts.SyntaxKind.ArrayType == currentKind) {
-        currentKind = tr.type.elementType.kind;
-        currentNode = tr.type.elementType;
-        returnType = 'array ';
-        baseReturnType = 'array';
+        currentKind = currentNode.elementType.kind;
+        currentNode = currentNode.elementType;
+        varType.array = true;
     }
-    var switchReturnType = ' ';
-    switch (currentKind) {
-        case ts.SyntaxKind.TypeReference:
-            switchReturnType = 'complex';
-            if (currentNode.typeName.kind == ts.SyntaxKind.QualifiedName) {
-                returnType += currentNode.typeName.left.text + '.' + currentNode.typeName.right.text;
-                switchReturnType = currentNode.typeName.right.text;
-            } else if (currentNode.typeName.kind == ts.SyntaxKind.Identifier) {
-                returnType += currentNode.typeName.text;
-                switchReturnType = currentNode.typeName.text;
-            } else {
-                if (PRINT_DEBUG)  console.log();
-            }
-            break;
-        case ts.SyntaxKind.ArrayType:
-            returnType += 'array';
-            switchReturnType = 'array';
-            break;
-        case ts.SyntaxKind.BooleanKeyword:
-            returnType += 'boolean';
-            switchReturnType = 'boolean';
-            break;
-        case ts.SyntaxKind.StringKeyword:
-            returnType += 'string';
-            switchReturnType = 'string';
-            break;
-        case ts.SyntaxKind.NumberKeyword:
-            returnType += 'number';
-            switchReturnType = 'number';
-            break;
-        case ts.SyntaxKind.AnyKeyword:
-            returnType += 'any';
-            switchReturnType = 'any';
-            break;
-        case ts.SyntaxKind.VoidKeyword:
-            returnType += 'void';
-            switchReturnType = 'void';
-            break;
-        case ts.SyntaxKind.UnionType:
-            switchReturnType = 'union_basic';
-            returnType += '{ ';
-            currentNode.types.forEach(function (union) {
-                if (union.kind == ts.SyntaxKind.StringKeyword)
-                    returnType += 'string, ';
-                else if (union.kind == ts.SyntaxKind.BooleanKeyword)
-                    returnType += 'boolean, ';
-                else if (union.kind == ts.SyntaxKind.NumberKeyword)
-                    returnType += 'number, ';
-                else if (union.kind == ts.SyntaxKind.AnyKeyword)
-                    returnType += 'any, ';
-                else {
-                    returnType += 'complex, ';
-                    switchReturnType = 'union_complex';
-                }
-            });
-            returnType += '}';
-            break;
-        case ts.SyntaxKind.FunctionType:
-            returnType += 'function';
-            switchReturnType = 'complex';
-            break;
-        default:
-            returnType += 'complex';
-            switchReturnType = 'complex';
-            break
-    }
-    baseReturnType += '-' + switchReturnType;
-    if (PRINT_DEBUG) console.log(indent + ts.SyntaxKind[tr.type.kind] + ' : ' + returnType);
-    return baseReturnType;
+    varType.type = getTypeForProperty(currentNode, currentNode);
+    return varType;
 }
 
-function main(ROOT, cb) {
-    fs.readdir(ROOT, function (err, files) {
-        if (err) throw err;
-        files.forEach(function (file) {
-            var filePath = path.resolve(ROOT, file);
-            fs.stat(filePath, function (err, stats) {
-//                if(file=='absolute' && !file.startsWith('.') && stats && stats.isDirectory()) {
-                if (!file.startsWith('.') && stats && stats.isDirectory()) {
-                    fs.exists(path.resolve(ROOT, file, file + '.d.ts'), function (exists) {
-                        if (exists) {
-                            processFile(file, ROOT + file + '/' + file + '.d.ts');
-                        }
-                    });
-                }
-            });
-        });
-        return results;
-    });
-}
-
-function printResults(data) {
-    //console.log(data);
-}
-
-var WRITE_FILE = false;
-var PRINT_DEBUG = false;
-var PRINT_METHODS = true;
 var ROOT = '/Users/Pankajan/Edinburgh/Source/DefinitelyTyped/';
 
 module.exports = {

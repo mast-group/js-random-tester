@@ -4,8 +4,8 @@
 var util = require('./util.js');
 var parser = require('./definitionParser');
 
-var functionsList = parser.getFunctions('underscore', 'underscore');
-var module = require('underscore');
+var functionsList = parser.getFunctions('abs', 'abs');
+var module = require('acl');
 
 var libraryNames = util.getFiles('/Users/Pankajan/Edinburgh/Source/JSRandomTester/node_modules', false, ['includeFolders', 'onlyFolders', 'onlyNames']);
 
