@@ -49,6 +49,9 @@ function getKindRecurse(isKind, roots) {
 function isClassInterfaceRecursively(kind) {
     return kind === ts.SyntaxKind.InterfaceDeclaration || kind === ts.SyntaxKind.ClassDeclaration;
 }
+function isTypeAliasDeclarationRecursively(kind) {
+    return kind === ts.SyntaxKind.TypeAliasDeclaration;
+}
 function isKindNamespaceDeclaration(kind) {
     return kind === ts.SyntaxKind.NamespaceImport;
 }
@@ -74,7 +77,7 @@ function isKindFunctionDeclaration(kind) {
     return kind === ts.SyntaxKind.FunctionDeclaration || kind === ts.SyntaxKind.MethodDeclaration || kind === ts.SyntaxKind.MethodSignature;
 }
 function isKindConstructSignature(kind) {
-    return kind === ts.SyntaxKind.ConstructSignature || kind === ts.SyntaxKind.Constructor;
+    return kind === ts.SyntaxKind.ConstructSignature || kind === ts.SyntaxKind.Constructor || kind === ts.SyntaxKind.CallSignature;
 }
 function isKindExportAssignment(kind) {
     return kind === ts.SyntaxKind.ExportAssignment;
@@ -123,6 +126,9 @@ function isKindParameter(kind) {
 }
 function getClassInterfaceRecursively(roots) {
     return getKindRecurse(isClassInterfaceRecursively, roots);
+}
+function getTypeAliasDeclarationRecursively(roots) {
+    return getKindRecurse(isTypeAliasDeclarationRecursively, roots);
 }
 function getNamespaceDeclarations(roots) {
     return getKind(isKindNamespaceDeclaration, roots);
@@ -252,19 +258,31 @@ function extractFunctions(mbs, isFunctions) {
     var result = [];
     fds.map(function (fd) {
         if (fd.name !== undefined || !isFunctions) {
+            var isStatic = false;
+            if(fd.flags===ts.NodeFlags.Static) {
+                isStatic = true;
+            }
             var pds = getParameters([fd]);
             var returnType = 'void';
             if (fd.type) {
-                returnType = getTypeForProperty(fd.type, fd);
+                returnType = getTypeForProperty(fd.type);
+            } else if(!isFunctions) {
+                returnType = mbs[0].name.text;
             }
-            var params = {};
+            var params = [];
             pds.forEach(function (pd) {
-                params[pd.name.text] = getVariableType(pd.type, pd.questionToken===undefined)
+                if(pd.type===undefined) {
+                    params.push(undefined);
+                } else {
+                    var varType = getVariableType(pd.type, pd.questionToken === undefined);
+                    varType['name'] = pd.name.text;
+                    params.push(varType);
+                }
             });
             if(isFunctions)
-                result.push({name: fd.name.text, arguments: params, returnType: returnType});
+                result.push({name: fd.name.text, arguments: params, returnType: returnType, isStatic:isStatic});
             else
-                result.push({name: 'constructor', arguments: params, returnType: returnType});
+                result.push({name: 'constructor', arguments: params, returnType: returnType, isStatic:isStatic});
         }
     });
     return result;
@@ -295,10 +313,21 @@ function getProperNode(cn, mbs, exportVariables, vd, sf) {
             }
         }
     }
+    for(i=0;i<currentNode.length;i++) {
+        if(currentNode[i].heritageClauses!==undefined  && currentNode[i].heritageClauses.length > 0 &&
+            currentNode[i].heritageClauses[0].types !== undefined && currentNode[i].heritageClauses[0].types.length > 0 &&
+            currentNode[i].heritageClauses[0].types[0].expression !== undefined &&
+            currentNode[i].heritageClauses[0].types[0].expression.text !== undefined) {
+            var extendedNode = getProperNode(cn, mbs, [currentNode[i].heritageClauses[0].types[0].expression.text], vd, sf)
+            if(extendedNode!==undefined) {
+                for(var j=0; j<extendedNode.length;j++) {
+                    currentNode.push(extendedNode[j]);
+                }
+            }
+        }
+    }
     return currentNode;
 }
-//Global variable to store current source code text
-var source;
 
 /**
  * Main method to process given file
@@ -308,8 +337,6 @@ var source;
 function processFile(project, filename) {
     var result = {};
     try {
-        console.log('File >>> ' + filename);
-
         source = String(fs.readFileSync(filename));
         var sf = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest);
 
@@ -322,56 +349,80 @@ function processFile(project, filename) {
         var exportVariables = [];
 
         var totalClassInterface = getClassInterfaceRecursively([sf]);
+        var typeAliases = getTypeAliasDeclarationRecursively([sf]);
 
+        var types = {};
+        if(typeAliases!==undefined && typeAliases.length>0){
+            for(var i=0; i<typeAliases.length;i++) {
+                var typeAl = [];
+                if(typeAliases[i].type.types) {
+                    for(var j=0; j<typeAliases[i].type.types.length;j++) {
+                        typeAl.push(getTypeForProperty(typeAliases[i].type.types[j]));
+                    }
+                } else if(typeAliases[i].type.type !== undefined) {
+                    typeAl.push(getTypeForProperty(typeAliases[i].type.type));
+                }
+                types[typeAliases[i].name.text] = typeAl;
+            }
+        }
         var definedClasses = [];
-        for (var i = 0; i < totalClassInterface.length; i++) {
+        for (i = 0; i < totalClassInterface.length; i++) {
             var curClass = totalClassInterface[i];
             var constructors = extractFunctions([curClass], false);
+            var methodNamesAndArguments = extractFunctions([curClass], true);
             var propSig = getPropertySignatures([curClass]);
             var definedClass = {name: curClass.name.text};
             var definedProperties = {};
-            console.log(curClass.name.text);
-            for (var j = 0; j < propSig.length; j++) {
+            //console.log(curClass.name.text);
+            for (j = 0; j < propSig.length; j++) {
                 var curProp = propSig[j];
                 var propvalues = {};
                 propvalues['optional'] = curProp.questionToken !== undefined;
-                console.log('        ' + curProp.name.text);
+                //console.log('        ' + curProp.name.text);
                 propvalues['type'] = getTypeForProperty(curProp.type, curProp);
                 definedProperties[curProp.name.text] = propvalues;
             }
             definedClass['properties'] = definedProperties;
             definedClass['constructors'] = constructors;
+            definedClass['methods'] = methodNamesAndArguments;
             definedClasses.push(definedClass);
         }
 
         ea.map(function (dd) {
-            if (dd.expression.text === undefined) {
-                console.log();
+            if(dd.expression.text !== undefined){
+                exportVariables.push(dd.expression.text);
+            } else if (dd.expression !== undefined && dd.expression.text === undefined) {
+                exportVariables.push(source.substring(ts.skipTrivia(source, dd.expression.pos), dd.expression.end))
             }
-            exportVariables.push(dd.expression.text);
         });
         if (exportVariables.length === 0) {
             var vs = getVariableStatements([sf]);
             vs.map(function (dd) {
                 var varDeclared = dd.declarationList.declarations[0].type;
-                if (source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end) === undefined) {
-                    console.log();
+                var s = source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end);
+                if (s !== undefined) {
+                    exportVariables.push(s);
                 }
-                exportVariables.push(source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end));
             });
         }
         var tmpCurrentNodes = getProperNode(mbs, mbs, exportVariables, vd, sf);
         var currentNode=[];
+        var unreachable = false;
         for(i=0; i<tmpCurrentNodes.length; i++) {
             var tmp = tmpCurrentNodes[i];
-                while (tmp.kind === ts.SyntaxKind.VariableDeclaration) {
+                while (!unreachable && tmp.kind === ts.SyntaxKind.VariableDeclaration) {
                     var varDeclared = tmp.type;
                     exportVariables = [];
-                    if (source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end) === undefined) {
-                        console.log();
+                    var s = source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end);
+                    if(s.split(" ").length>1 && varDeclared.exprName!==undefined) {
+                        s = source.substring(ts.skipTrivia(source, varDeclared.exprName.pos), varDeclared.exprName.end);
                     }
-                    exportVariables.push(source.substring(ts.skipTrivia(source, varDeclared.pos), varDeclared.end));
-                    tmp = getProperNode([tmp], mbs, exportVariables, vd, sf);
+                    if (s !== undefined) {
+                        exportVariables.push(s);
+                        tmp = getProperNode([tmp], mbs, exportVariables, vd, sf);
+                    } else {
+                        unreachable = true;
+                    }
                 }
             if(tmp.length)
                 for(j=0; j<tmp.length; j++)
@@ -380,8 +431,19 @@ function processFile(project, filename) {
                 currentNode.push(tmp);
         }
 
-        var methodNamesAndArguments = [];
-        var constructors = [];
+        var tmpCurNodeIndex = [];
+        tmpCurrentNodes = [];
+        for(var x=0;x<currentNode.length;x++){
+            var index = currentNode[x].pos+'_'+currentNode.end;
+            if(tmpCurNodeIndex.indexOf(index)===-1) {
+                tmpCurNodeIndex.push(index);
+                tmpCurrentNodes.push(currentNode[x]);
+            }
+        }
+
+        currentNode = tmpCurrentNodes;
+        methodNamesAndArguments = [];
+        constructors = [];
         for(i=0; i<currentNode.length;i++) {
             var tmpMethodNamesAndArguments;
             var tmpconstructors;
@@ -399,11 +461,19 @@ function processFile(project, filename) {
                 constructors.push(tmpconstructors[j]);
             }
         }
-        var finalResults = {};
+
+        var finalResults = {isMethod:false};
         finalResults['classes'] = definedClasses;
         finalResults['methods'] = methodNamesAndArguments;
         finalResults['constructors'] = constructors;
+        finalResults['types'] = types;
+        for(var k=0;k<currentNode.length;k++) {
+            if (currentNode[k].kind === ts.SyntaxKind.FunctionDeclaration) {
+                finalResults['isMethod'] = true;
+            }
+        }
         console.log(JSON.stringify(finalResults));
+        return finalResults;
     } catch (err) {
         console.log(err.stack);
         console.log('Unable to process : ' + filename);
@@ -419,6 +489,7 @@ function processFile(project, filename) {
  * @returns {Array}
  */
 function detectExportedModule(currentVar, mbs, vd, sf) {
+    if(currentVar==='__Autolinker') currentVar = '___Autolinker';
     var suitableModule = [];
 
     if (vd !== undefined) {
@@ -469,6 +540,22 @@ function detectExportedModule(currentVar, mbs, vd, sf) {
         }
     });
 
+    getModulesDeclarations(mbs).map(function (sfd) {
+        var variableName = sfd.name.text;
+        if (currentVar === variableName) {
+            suitableModule.push(sfd);
+        }
+    });
+
+    if (sf !== undefined) {
+        getFunctionDeclarations([sf]).map(function (sfd) {
+            var variableName = sfd.name.text;
+            if (currentVar === variableName) {
+                suitableModule.push(sfd);
+            }
+        });
+    }
+
     if (sf !== undefined) {
         getModulesDeclarations([sf]).map(function (sfd) {
             var variableName = sfd.name.text;
@@ -479,7 +566,15 @@ function detectExportedModule(currentVar, mbs, vd, sf) {
     }
 
     if (sf !== undefined) {
-        getInterfaceDeclarations([sf]).map(function (sfd) {
+    getInterfaceDeclarations([sf]).map(function (sfd) {
+            var variableName = sfd.name.text;
+            if (currentVar === variableName) {
+                suitableModule.push(sfd);
+            }
+        });
+    }
+    if (sf !== undefined) {
+    getClassDeclarations([sf]).map(function (sfd) {
             var variableName = sfd.name.text;
             if (currentVar === variableName) {
                 suitableModule.push(sfd);
@@ -496,6 +591,22 @@ function detectExportedModule(currentVar, mbs, vd, sf) {
             });
         }
     }
+    if(suitableModule.length==0) {
+        getClassInterfaceRecursively(mbs).map(function (sfd) {
+            var variableName = sfd.name.text;
+            if (currentVar === variableName) {
+                suitableModule.push(sfd);
+            }
+        });
+    }
+    if(suitableModule.length==0 && sf !== undefined) {
+        getClassInterfaceRecursively([sf]).map(function (sfd) {
+            var variableName = sfd.name.text;
+            if (currentVar === variableName) {
+                suitableModule.push(sfd);
+            }
+        });
+    }
     return suitableModule;
 }
 
@@ -505,8 +616,8 @@ function detectExportedModule(currentVar, mbs, vd, sf) {
  * @param node
  * @returns {{object: boolean, array: boolean, function: boolean, properties: {}}}
  */
-function getTypeForProperty(nodeType, node) {
-    var results = {object: false, array: false, function: false, properties: {}}
+function getTypeForProperty(nodeType) {
+    var results = {library:library, object: false, array: false, function: false, paranthesis: false, predicate: false, properties: {}}
     var prop = {};
     if (nodeType.kind === ts.SyntaxKind.FunctionType) {
         //Function type. Complex so just mark as function and skip
@@ -515,7 +626,19 @@ function getTypeForProperty(nodeType, node) {
     } else if (nodeType.kind === ts.SyntaxKind.ArrayType) {
         //Array type detected
         results.array = true;
-        results.properties = {kind:'array', type:getTypeForProperty(nodeType.elementType, node)};
+        results.properties = {kind:'array', type:getTypeForProperty(nodeType.elementType)};
+    } else if (nodeType.kind === ts.SyntaxKind.ParenthesizedType) {
+        //Array type detected
+        results.paranthesis = true;
+        results.properties = {kind:'paranthesis', type:getTypeForProperty(nodeType.type)};
+    } else if (nodeType.kind === ts.SyntaxKind.TypeQuery) {
+        results = getTypeForProperty(nodeType.exprName);
+    } else if (nodeType.kind === ts.SyntaxKind.QualifiedName) {
+        results.object = true;
+        results.properties = {kind:'complex', type:source.substring(ts.skipTrivia(source, nodeType.pos), nodeType.end)};
+    } else if (nodeType.kind === ts.SyntaxKind.TypePredicate) {
+        results.predicate = true;
+        results.properties = {kind:'boolean', parameter:nodeType.parameterName, type:getTypeForProperty(nodeType.type)};
     } else {
         var tokenValue = ts.tokenToString(nodeType.kind);
         if (tokenValue === undefined) {
@@ -529,13 +652,17 @@ function getTypeForProperty(nodeType, node) {
                 var members = nodeType.members;
                 for (var i = 0; i < members.length; i++) {
                     if (members[i].name !== undefined) {
-                        prop.type[members[i].name.text] = getTypeForProperty(members[i].type, node);
+                        prop.type[members[i].name.text] = getTypeForProperty(members[i].type);
                     }
                 }
             } else if(nodeType.elementTypes!==undefined) {
-                prop = {kind: 'tuple', type:[]};
-                for (i = 0; i < nodeType.elementTypes.length; i++) {
-                    prop.type.push(getTypeForProperty(nodeType.elementTypes[i], node));
+                if(nodeType.elementTypes.length==0) {
+                    prop = {kind: 'array', type: []};
+                } else {
+                    prop = {kind: 'tuple', type: []};
+                    for (i = 0; i < nodeType.elementTypes.length; i++) {
+                        prop.type.push(getTypeForProperty(nodeType.elementTypes[i]));
+                    }
                 }
             } else if(nodeType.types !== undefined) {
                 prop = {kind:'union', type:[]};
@@ -548,12 +675,13 @@ function getTypeForProperty(nodeType, node) {
                 var typeName = nodeType.typeName;
                 var tmpProp = source.substring(ts.skipTrivia(source, typeName.pos), typeName.end);
                 if (tmpProp === undefined) {
-                    console.log();
+                    prop = {kind:'complex'};
+                } else {
+                    tmpProp = tmpProp.split(".");
+                    prop = {kind: tmpProp[tmpProp.length - 1]};
                 }
-                tmpProp = tmpProp.split(".");
-                prop = {kind:tmpProp[tmpProp.length - 1]};
             } else {
-                console.log();
+                prop = {kind:'complex'};
             }
         } else {
             //Simple type
@@ -564,8 +692,6 @@ function getTypeForProperty(nodeType, node) {
     return results;
 }
 
-exports.main = main;
-
 /**
  * Util method to call 'getTypeForProperty' and build result object
  * @param node
@@ -574,24 +700,23 @@ exports.main = main;
  */
 function getVariableType(node, isCompulsury) {
     var currentNode = node;
-    var varType = {type: '', array: false, optional: !isCompulsury};
+    var varType = {type: '', optional: !isCompulsury};
     if (currentNode === undefined) {
         varType.type = 'any';
+    } else {
+        varType.type = getTypeForProperty(currentNode);
     }
-    var currentKind = currentNode.kind;
-    if (ts.SyntaxKind.ArrayType == currentKind) {
-        currentKind = currentNode.elementType.kind;
-        currentNode = currentNode.elementType;
-        varType.array = true;
-    }
-    varType.type = getTypeForProperty(currentNode, currentNode);
     return varType;
 }
 
+//Constant to store Root folder of DefinitelyTyped project
 var ROOT = '/Users/Pankajan/Edinburgh/Source/DefinitelyTyped/';
-
+//Global variable to store current source code text
+var source;
+var library;
 module.exports = {
     getFunctions: function (projectName, fileName) {
+        library = projectName;
         return processFile(projectName, ROOT + projectName + '/' + fileName + '.d.ts');
     }
 };

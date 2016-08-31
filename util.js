@@ -9,16 +9,22 @@ module.exports = {
         return Object.keys(obj).length === 0 && obj.constructor === Object;
     },
 
+    randomNumber: function (low, high)
+    {
+        if(high)
+            return Math.random() * (high - low) + low;
+        else
+            return Math.random() * low;
+    },
+
     randomInt: function (low, high)
     {
-    return Math.floor(Math.random() * (high - low) + low);
+        return Math.floor(this.randomNumber(low, high));
     },
-
 
     randomBoolean: function () {
-    return Math.random(10) < 5;
+        return Math.random(10) < 5;
     },
-
 
     randomString: function () {
     var text = "";
@@ -30,6 +36,17 @@ module.exports = {
     return text;
     },
 
+    randomAny: function () {
+        var ran = this.randomInt(3);
+        var retVal;
+        if(ran===0)
+            retVal =  this.randomBoolean();
+        else if(ran===1)
+            retVal =  this.randomNumber(1000);
+        else
+            retVal = this.randomString();
+        return retVal;
+    },
 
     getFiles: function (dir, recursive, options, files_){
         files_ = files_ || [];
