@@ -12,18 +12,10 @@ function bootstrapRandomTesting(moduleName) {
         //Library initialized a object so we can directly access methods
         var methods = definitionStructure.methods;
         if(methods===undefined) {
-            console.log();
         } else {
             for (var i = 0; i < methods.length; i++) {
                 var methodName = methods[i].name;
-                if(isValidArguments(methods[i].arguments)) {
-                    var kind = undefined; var isArray = undefined;
-                    if(validReturnType(methods[i].returnType)) {
-                        kind = methods[i].returnType.properties.kind;
-                        isArray = methods[i].returnType.array;
-                    }
-                    createdTestSource += wrapTryCatch(kind, isArray, "variableName = " + mName + '.' +methodName + generateRandomArguments(methods[i].arguments) + ";");
-                }
+                createdTestSource += wrapTryCatch(mName + '.' +methodName);
             }
         }
     } else if(definitionStructure.isMethod && definitionStructure.methods !==undefined){
@@ -31,23 +23,10 @@ function bootstrapRandomTesting(moduleName) {
         methods = definitionStructure.methods;
 
         if(methods.length===1) {
-            kind = undefined; isArray = undefined;
-            if(validReturnType(methods[0].returnType)) {
-                kind = methods[0].returnType.properties.kind;
-                isArray = methods[0].returnType.array;
-            }
-            createdTestSource += wrapTryCatch(kind, isArray, "variableName = " + mName  + generateRandomArguments(methods[0].arguments) + ";");
         } else {
             for (i = 0; i < methods.length; i++) {
                 methodName = methods[i].name;
-                if (isValidArguments(methods[i].arguments)) {
-                    kind = undefined; isArray = undefined;
-                    if(validReturnType(methods[i].returnType)) {
-                        kind = methods[i].returnType.properties.kind;
-                        isArray = methods[i].returnType.array;
-                    }
-                    createdTestSource += wrapTryCatch(kind, isArray, "variableName = " + mName + '.' + methodName + generateRandomArguments(methods[i].arguments) + ";");
-                }
+                createdTestSource += wrapTryCatch(mName + '.' + methodName);
             }
         }
 
@@ -60,7 +39,7 @@ function bootstrapRandomTesting(moduleName) {
                     if(skipModules.indexOf(moduleName) !== -1) {
                         createdTestSource += 'var '+ mName+ 'Obj = ' + mName + ';\n';
                     } else {
-                        createdTestSource += wrapTryCatch('var '+ mName+ 'Obj = new ' + mName + generateRandomArguments(curConst.arguments) + ";");
+                        createdTestSource += wrapTryCatchForMethods('var '+ mName+ 'Obj = new ' + mName + generateRandomArguments(curConst.arguments) + ";");
                     }
                     if(skipModules.indexOf(moduleName) !== -1|| curConst.returnType==='void') {
                         var curMethods = definitionStructure.methods;
@@ -75,44 +54,25 @@ function bootstrapRandomTesting(moduleName) {
                         }
                     }
                     for(j=0;j<curMethods.length;j++) {
-                        if(isValidArguments(curMethods[j].arguments)) {
                             methodName = curMethods[j].name;
                             if(curMethods[j].isStatic) {
-                                kind = undefined; isArray = undefined;
-                                if(validReturnType(curMethods[j].returnType)) {
-                                    kind = curMethods[j].returnType.properties.kind;
-                                    isArray = curMethods[j].returnType.array;
-                                }
-                                createdTestSource += wrapTryCatch(kind, isArray, "variableName = " + mName + '.' +methodName + generateRandomArguments(curMethods[j].arguments) + ";");
+                                createdTestSource += wrapTryCatch(mName + '.' +methodName);
                             } else {
-                                kind = undefined; isArray = undefined;
-                                if(validReturnType(curMethods[j].returnType)) {
-                                    kind = curMethods[j].returnType.properties.kind;
-                                    isArray = curMethods[j].returnType.array;
-                                }
-                                createdTestSource += wrapTryCatch(kind, isArray, "variableName = " + mName + 'Obj.' +methodName + generateRandomArguments(curMethods[j].arguments) + ";");
+                                createdTestSource += wrapTryCatch(mName + 'Obj.' +methodName);
                             }
-                        }
                     }
                 }
             }
         }
     } else if(definitionStructure.methods.length>0) {
-        if(definitionStructure.methods.length===1) {
-            kind = undefined; isArray = undefined;
-            if(validReturnType(definitionStructure.methods[0].returnType)) {
-                kind = definitionStructure.methods[0].returnType.properties.kind;
-                isArray = definitionStructure.methods[0].returnType.array;
-            }
-            createdTestSource += wrapTryCatch(kind, isArray, "variableName = " + mName + generateRandomArguments(definitionStructure.methods[0].arguments) + ";");
-        } else {
+        if(definitionStructure.methods.length===1) {} else {
             for(j=0;j<definitionStructure.methods.length;j++) {
                 kind = undefined; isArray = undefined;
                 if(validReturnType(definitionStructure.methods[j].returnType)) {
                     kind = definitionStructure.methods[j].returnType.properties.kind;
                     isArray = definitionStructure.methods[j].returnType.array;
                 }
-                createdTestSource += wrapTryCatch(kind, isArray, "variableName = " + mName + '.' + definitionStructure.methods[j].name + generateRandomArguments(definitionStructure.methods[j].arguments) + ";");
+                createdTestSource += wrapTryCatch(mName + '.' + definitionStructure.methods[j].name);
 
             }
         }
@@ -153,7 +113,6 @@ function bootstrapRandomTesting(moduleName) {
             }
         }
         if(!processed) {
-            console.log();
         }
     }
     return createdTestSource;
@@ -182,12 +141,10 @@ function generateValuesForArgument(type, argument){
     var argumentValue;
 
     if(type.object===true){
-        console.log();
         argumentValue = {};
         for(var key in type.properties.type) {
             if (type.properties.type.hasOwnProperty(key)) {
                 if(type.properties.type[key]===undefined){
-                    console.log();
                 }
                 argumentValue[key] = generateValuesForArgument(type.properties.type[key], argument);
             }
@@ -197,7 +154,6 @@ function generateValuesForArgument(type, argument){
         argumentValue = [];
         for(var i=0;i<valueCount;i++) {
             if(type.properties.type===undefined){
-                console.log();
             }
             argumentValue.push(generateValuesForArgument(type.properties.type, argument));
         }
@@ -208,10 +164,8 @@ function generateValuesForArgument(type, argument){
     } else if(type.paranthesis===true){
         argumentValue = generateValuesForArgument(type.properties.type, argument);
     } else if(type.predicate===true){
-        console.log();
     } else{
         if(typeof type.properties.kind === 'object') {
-            console.log();
         } else {
             if (type.properties.kind==='number') {
                 argumentValue = util.randomNumber(10);
@@ -250,7 +204,6 @@ function generateValuesForArgument(type, argument){
                 if(!objAvailable) {
                     for(var prop in definitionStructure.types) {
                         if(definitionStructure.types.hasOwnProperty(prop)) {
-                            console.log();
                             if(prop===type.properties.kind ) {
                                 argumentValue = generateValuesForArgument(definitionStructure.types[prop][util.randomInt(definitionStructure.types[prop].length)]);
                             }
@@ -258,11 +211,7 @@ function generateValuesForArgument(type, argument){
                         }
                     }
                 }
-
-                if(!objAvailable)
-                    console.log();
             } else {
-                console.log();
             }
         }
 
@@ -278,7 +227,7 @@ function isValidArguments(arguments) {
     return isValid;
 }
 
-function wrapTryCatch(kind, isArray, newCode) {
+function wrapTryCatchForMethods(kind, isArray, newCode) {
     var typeCheck ='';
     if(isArray!== undefined &&  kind !== undefined) {
         if(isArray) {
@@ -289,7 +238,12 @@ function wrapTryCatch(kind, isArray, newCode) {
         typeCheck += " {correctType++;}\nelse{wrongType++;" +
             "wrongDetails+=\"" + newCode.replace(/"/g, "'") + " : Type should be : " + kind + " found : \"+typeof variableName+\"\\n\"}";
     }
-    return 'try{\n' +newCode + "\nsuccess++;\nmoduleCount['" + mName + "'] = 1;\n"+ typeCheck +"} catch(err) { console.log(err.stack); fail++;}\n"
+    return 'try{\n' +newCode + "\nsuccess++;\nmoduleCount['" + mName + "'] = 1;\n"+ typeCheck +"} catch(err) { fail++;}\n"
+}
+
+function wrapTryCatch(newCode) {
+    var typeCheck ='';
+    return 'try{\n if(' +newCode + " === undefined){console.log('" +newCode + " from " + mName +"');} } catch(err) {fail++;}\n"
 }
 
 function validReturnType(returnType) {

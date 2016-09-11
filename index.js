@@ -3,9 +3,9 @@
  */
 var util = require('./util.js');
 var parser = require('./definitionParser');
-var ranTestGen = require('./randomTestGenerator');
+var ranTestGen = require('./getMismatchLibraries');
 
-//var file = 'big.js';
+//var file = 'aws-sdk';
 //var module = require(file);
 //var functionsList = parser.getFunctions(file, file);
 //ranTestGen.executeRandomTest(file, functionsList);
@@ -13,7 +13,7 @@ var ranTestGen = require('./randomTestGenerator');
 var filesystem = require("fs");
 filesystem.readdirSync('/Users/Pankajan/Edinburgh/Source/JSRandomTester/node_modules').forEach(function(file) {
     var stat = filesystem.statSync('/Users/Pankajan/Edinburgh/Source/JSRandomTester/node_modules'+'/'+file);
-    if (stat && stat.isDirectory() && !file.startsWith('.')) {
+    if (stat && stat.isDirectory() && !file.startsWith('.') && file!=='d3') {
         try {
             console.log('File >>> ' + file);
             var functionsList = parser.getFunctions(file, file);
@@ -23,5 +23,10 @@ filesystem.readdirSync('/Users/Pankajan/Edinburgh/Source/JSRandomTester/node_mod
         }
     }
 });
+
+filesystem.appendFileSync('ranTests/RanTest.js', "console.log(success);\nconsole.log(fail);" +
+    "\nconsole.log(correctType);\nconsole.log(wrongType);\nconsole.log(wrongDetails);\n" +
+    "console.log(moduleCount.length);");
+
 
 

@@ -266,9 +266,10 @@ function extractFunctions(mbs, isFunctions) {
             var returnType = 'void';
             if (fd.type) {
                 returnType = getTypeForProperty(fd.type);
-            } else if(!isFunctions) {
-                returnType = mbs[0].name.text;
             }
+            //else if(!isFunctions) {
+            //    returnType = mbs[0].name.text;
+            //}
             var params = [];
             pds.forEach(function (pd) {
                 if(pd.type===undefined) {
@@ -280,9 +281,9 @@ function extractFunctions(mbs, isFunctions) {
                 }
             });
             if(isFunctions)
-                result.push({name: fd.name.text, arguments: params, returnType: returnType, isStatic:isStatic});
+                result.push({name: fd.name.text, arguments: params, returnType: returnType, isStatic:isStatic, pos:fd.pos, end:fd.end});
             else
-                result.push({name: 'constructor', arguments: params, returnType: returnType, isStatic:isStatic});
+                result.push({name: 'constructor', arguments: params, returnType: returnType, isStatic:isStatic, pos:fd.pos, end:fd.end});
         }
     });
     return result;
@@ -383,8 +384,10 @@ function processFile(project, filename) {
                 definedProperties[curProp.name.text] = propvalues;
             }
             definedClass['properties'] = definedProperties;
-            definedClass['constructors'] = constructors;
-            definedClass['methods'] = methodNamesAndArguments;
+            definedClass['constructors'] = removeDuplicates(constructors);
+            definedClass['methods'] = removeDuplicates(methodNamesAndArguments);
+            definedClass['pos'] = curClass.pos;
+            definedClass['end'] = curClass.end;
             definedClasses.push(definedClass);
         }
 
@@ -463,16 +466,16 @@ function processFile(project, filename) {
         }
 
         var finalResults = {isMethod:false};
-        finalResults['classes'] = definedClasses;
-        finalResults['methods'] = methodNamesAndArguments;
-        finalResults['constructors'] = constructors;
+        finalResults['classes'] = removeDuplicates(definedClasses);
+        finalResults['methods'] = removeDuplicates(methodNamesAndArguments);
+        finalResults['constructors'] = removeDuplicates(constructors);
         finalResults['types'] = types;
         for(var k=0;k<currentNode.length;k++) {
             if (currentNode[k].kind === ts.SyntaxKind.FunctionDeclaration) {
                 finalResults['isMethod'] = true;
             }
         }
-        console.log(JSON.stringify(finalResults));
+        //console.log(JSON.stringify(finalResults));
         return finalResults;
     } catch (err) {
         console.log(err.stack);
@@ -480,6 +483,23 @@ function processFile(project, filename) {
     }
 }
 
+function removeDuplicates(array) {
+    var duplicatesIndex = [];
+    for(var i=0; i<array.length-1; i++) {
+        for(var j=i+1; j<array.length; j++) {
+            if(array[i].pos===array[j].pos && array[i].end===array[j].end) {
+                duplicatesIndex.push(j);
+            }
+        }
+    }
+    var tmpArray=[];
+    for(i=0; i<array.length; i++) {
+        if(duplicatesIndex.indexOf(i)===-1) {
+            tmpArray.push(array[i]);
+        }
+    }
+    return tmpArray;
+}
 /**
  * Method to identify initialized (globally accessible) module
  * @param currentVar

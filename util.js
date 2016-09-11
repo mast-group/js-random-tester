@@ -26,13 +26,12 @@ module.exports = {
         return Math.random(10) < 5;
     },
 
-    randomString: function () {
+    randomString: function (includeQuotes) {
     var text = "";
     var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
-    for (var i = 0; i < Math.random(50); i++)
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-
+    for (var i = 0; i < this.randomInt(20); i++)
+        text += possible.charAt(this.randomInt(possible.length));
     return text;
     },
 
@@ -42,9 +41,9 @@ module.exports = {
         if(ran===0)
             retVal =  this.randomBoolean();
         else if(ran===1)
-            retVal =  this.randomNumber(1000);
+            retVal =  this.randomNumber(10);
         else
-            retVal = this.randomString();
+            retVal = this.randomString(true);
         return retVal;
     },
 
