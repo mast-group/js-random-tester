@@ -637,7 +637,7 @@ function detectExportedModule(currentVar, mbs, vd, sf) {
  * @returns {{object: boolean, array: boolean, function: boolean, properties: {}}}
  */
 function getTypeForProperty(nodeType) {
-    var results = {library:library, object: false, array: false, function: false, paranthesis: false, predicate: false, properties: {}}
+    var results = {rawName: source.substring(ts.skipTrivia(source, nodeType.pos), nodeType.end), library:library, object: false, array: false, function: false, paranthesis: false, predicate: false, properties: {}};
     var prop = {};
     if (nodeType.kind === ts.SyntaxKind.FunctionType) {
         //Function type. Complex so just mark as function and skip
@@ -730,13 +730,12 @@ function getVariableType(node, isCompulsury) {
 }
 
 //Constant to store Root folder of DefinitelyTyped project
-var ROOT = '/Users/Pankajan/Edinburgh/Source/DefinitelyTyped/';
 //Global variable to store current source code text
 var source;
 var library;
 module.exports = {
-    getFunctions: function (projectName, fileName) {
+    getFunctions: function (projectName, filePath) {
         library = projectName;
-        return processFile(projectName, ROOT + projectName + '/' + fileName + '.d.ts');
+        return processFile(projectName, filePath);
     }
 };

@@ -160,22 +160,33 @@ function bootstrapRandomTesting(moduleName) {
 }
 
 function generateRandomArguments(arguments) {
+    argumentsArray = generateRandomArgumentsArray(arguments);
     var argumentsCode='( ';
+    for(var i=0; i<argumentsArray.length; i++) {
+        argumentsCode += JSON.stringify(argumentsArray[i]);
+        if(i<argumentsArray.length-1) argumentsCode += ", ";
+    }
+    return argumentsCode + " )";
+}
+
+
+function generateRandomArgumentsArray(arguments) {
+    var argumentsArray=[];
     for(var i=0; i<arguments.length; i++){
         var optional = arguments[i].optional;
         if(optional) {
-            if(util.randomBoolean()) {
-                argumentsCode += generateValuesForArgument(arguments[i].type, arguments[i]);
+            if(util.randomBoolean() && !arguments[i].type.function) {
+                argumentsArray.push(generateValuesForArgument(arguments[i].type, arguments[i]));
             } else {
                 i= arguments.length-1;
             }
         } else {
-            argumentsCode += generateValuesForArgument(arguments[i].type, arguments[i]);
+            argumentsArray.push(generateValuesForArgument(arguments[i].type, arguments[i]));
         }
-        if(i<arguments.length-1) argumentsCode += ", ";
     }
-    return argumentsCode + " )";
+    return argumentsArray;
 }
+
 
 function generateValuesForArgument(type, argument){
     var valueCount = 1;
@@ -267,7 +278,7 @@ function generateValuesForArgument(type, argument){
         }
 
     }
-    return JSON.stringify(argumentValue);
+    return argumentValue;
 }
 
 function isValidArguments(arguments) {
@@ -295,6 +306,11 @@ function wrapTryCatch(kind, isArray, newCode) {
 function validReturnType(returnType) {
     return returnType.properties.kind=== 'number' || returnType.properties.kind==='string' || returnType.properties.kind==="boolean";
 }
+
+function setDefinitionStructure(ds) {
+    definitionStructure = ds;
+}
+
 var genTestCode;
 var definitionStructure;
 var mName;
@@ -313,7 +329,11 @@ module.exports = {
              */
             fs.appendFileSync('ranTests/RanTest.js', genTestCode + bootstrapRandomTesting(moduleName));
         }
-    }
+    },
+    setDefinitionStructure: setDefinitionStructure,
+    isValidArguments: isValidArguments,
+    validReturnType: validReturnType,
+    generateRandomArgumentsArray: generateRandomArgumentsArray
 };
 
 

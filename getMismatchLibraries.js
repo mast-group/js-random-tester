@@ -24,9 +24,16 @@ function bootstrapRandomTesting(moduleName) {
 
         if(methods.length===1) {
         } else {
+            var mySet = new Set();
             for (i = 0; i < methods.length; i++) {
-                methodName = methods[i].name;
-                createdTestSource += wrapTryCatch(mName + '.' + methodName);
+                mySet.add(methods[i].name);
+            }
+            if(mySet.size>1) {
+                for (i = 0; i < methods.length; i++) {
+                    methodName = methods[i].name;
+                    if (methodName !== moduleName)
+                        createdTestSource += wrapTryCatch(mName + '.' + methodName);
+                }
             }
         }
 
