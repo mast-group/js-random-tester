@@ -325,21 +325,37 @@ function loadDefFile(moduleName, defFilePath) {
     projectName = moduleName;
 }
 
-function process() {
-    var name = path.match(/([^\/]*)\/*$/)[1]
-}
-
 function saveNewSourceFile() {
     console.log();
 }
 
-module.exports = {
-    createNewVersionDTFile: function (moduleName, dfPath) {
-        loadDefFile(moduleName, dfPath);
-        if (definitionStructure) {
-            ranTestGen.setDefinitionStructure(definitionStructure);
-            bootstrapRandomTesting(moduleName);
-            return generateNewSource();
-        }
+function createNewVersionDTFile(moduleName, dfPath) {
+    loadDefFile(moduleName, dfPath);
+    if (definitionStructure) {
+        ranTestGen.setDefinitionStructure(definitionStructure);
+        bootstrapRandomTesting(moduleName);
+        return generateNewSource();
     }
+}
+module.exports = {
+    createNewVersionDTFile: createNewVersionDTFile
 };
+
+if (!module.parent) {
+    // this is the main module
+    var args = process.argv.slice(2);
+    if(args.length!==2) {
+        console.log('Usage: <moduleName> <definitionFilepath>');
+    } else {
+        var newSource = createNewVersionDTFile(args[0], args[1]);
+        var newFilePath;
+        if(args.length===2) {
+            var path = require('path');
+            var fileName = path.basename(args[1]);
+            fileName = fileName.substring(0, fileName.indexOf('.d.ts')) + '_new.d.ts';
+            newFilePath = path.join(path.dirname(args[1]), fileName);
+        } else
+            newFilePath = args[2];
+        fs.writeFileSync(newFilePath, newSource);
+    }
+}

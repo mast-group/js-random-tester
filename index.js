@@ -8,7 +8,7 @@ var util = require('./util.js');
 var parser = require('./definitionParser');
 var ranTestGen = require('./getNewVersionDTFile');
 
-var file = 'bugsnag';
+var file = 'azure-mobile-apps';
 var dfFilePath = DFTYPE_ROOT + file + '/' + file + '.d.ts';
 var newSource = ranTestGen.createNewVersionDTFile(file, dfFilePath);
 

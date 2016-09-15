@@ -3,6 +3,7 @@
  */
 var util = require('./util.js');
 var fs = require('fs');
+var parser = require('./definitionParser');
 
 function bootstrapRandomTesting(moduleName) {
     var mName = moduleName.replace(/-/g, "").replace(/\./g,"");
@@ -12,7 +13,6 @@ function bootstrapRandomTesting(moduleName) {
         //Library initialized a object so we can directly access methods
         var methods = definitionStructure.methods;
         if(methods===undefined) {
-            console.log();
         } else {
             for (var i = 0; i < methods.length; i++) {
                 var methodName = methods[i].name;
@@ -152,9 +152,6 @@ function bootstrapRandomTesting(moduleName) {
                 }
             }
         }
-        if(!processed) {
-            console.log();
-        }
     }
     return createdTestSource;
 }
@@ -193,13 +190,9 @@ function generateValuesForArgument(type, argument){
     var argumentValue;
 
     if(type.object===true){
-        console.log();
         argumentValue = {};
         for(var key in type.properties.type) {
             if (type.properties.type.hasOwnProperty(key)) {
-                if(type.properties.type[key]===undefined){
-                    console.log();
-                }
                 argumentValue[key] = generateValuesForArgument(type.properties.type[key], argument);
             }
         }
@@ -207,9 +200,6 @@ function generateValuesForArgument(type, argument){
         valueCount = util.randomInt(10);
         argumentValue = [];
         for(var i=0;i<valueCount;i++) {
-            if(type.properties.type===undefined){
-                console.log();
-            }
             argumentValue.push(generateValuesForArgument(type.properties.type, argument));
         }
     } else if(type.function===true){
@@ -219,10 +209,10 @@ function generateValuesForArgument(type, argument){
     } else if(type.paranthesis===true){
         argumentValue = generateValuesForArgument(type.properties.type, argument);
     } else if(type.predicate===true){
-        console.log();
+        //TODO
     } else{
         if(typeof type.properties.kind === 'object') {
-            console.log();
+            //TODO
         } else {
             if (type.properties.kind==='number') {
                 argumentValue = util.randomNumber(10);
@@ -261,7 +251,6 @@ function generateValuesForArgument(type, argument){
                 if(!objAvailable) {
                     for(var prop in definitionStructure.types) {
                         if(definitionStructure.types.hasOwnProperty(prop)) {
-                            console.log();
                             if(prop===type.properties.kind ) {
                                 argumentValue = generateValuesForArgument(definitionStructure.types[prop][util.randomInt(definitionStructure.types[prop].length)]);
                             }
@@ -270,10 +259,7 @@ function generateValuesForArgument(type, argument){
                     }
                 }
 
-                if(!objAvailable)
-                    console.log();
             } else {
-                console.log();
             }
         }
 
@@ -297,10 +283,10 @@ function wrapTryCatch(kind, isArray, newCode) {
         } else {
             typeCheck = "if(typeof variableName === '" + kind +"')"
         }
-        typeCheck += " {correctType++;}\nelse{wrongType++;" +
+        typeCheck += " {}\nelse{" +
             "wrongDetails+=\"" + newCode.replace(/"/g, "'") + " : Type should be : " + kind + " found : \"+typeof variableName+\"\\n\"}";
     }
-    return 'try{\n' +newCode + "\nsuccess++;\nmoduleCount['" + mName + "'] = 1;\n"+ typeCheck +"} catch(err) { console.log(err.stack); fail++;}\n"
+    return 'try{\n' +newCode + "\n"+ typeCheck +"} catch(err) { console.log(err.stack);}\n"
 }
 
 function validReturnType(returnType) {
@@ -311,29 +297,49 @@ function setDefinitionStructure(ds) {
     definitionStructure = ds;
 }
 
+function executeRandomTest(moduleName, df, filePath) {
+    definitionStructure = df;
+    mName = moduleName;
+    if(definitionStructure) {
+        genTestCode = "\n\nvar "+ moduleName.replace(/-/g, "").replace(/\./g,"") + " = require ('" + moduleName + "');\n";
+        fs.writeFileSync(filePath, genTestCode + bootstrapRandomTesting(moduleName));
+    }
+}
+
+function generateRandomTestFile(moduleName, definitionFilePath, testOutputFilePath) {
+    var functionsList = parser.getFunctions(moduleName, definitionFilePath);
+    executeRandomTest(moduleName, functionsList, testOutputFilePath);
+}
+
 var genTestCode;
 var definitionStructure;
 var mName;
 module.exports = {
-    executeRandomTest: function (moduleName, df) {
-        definitionStructure = df;
-        mName = moduleName;
-        if(definitionStructure) {
-            genTestCode = "\n\nvar "+ moduleName.replace(/-/g, "").replace(/\./g,"") + " = require ('" + moduleName + "');\n";
-            //fs.writeFileSync('ranTests/'+moduleName+'RanTest.js', newCode);
-            /**
-             * , function (err) {
-            if (err) console.log(err.stack);
-            console.log("The file was saved!");
-        }
-             */
-            fs.appendFileSync('ranTests/RanTest.js', genTestCode + bootstrapRandomTesting(moduleName));
-        }
-    },
+    executeRandomTest: executeRandomTest,
     setDefinitionStructure: setDefinitionStructure,
     isValidArguments: isValidArguments,
     validReturnType: validReturnType,
-    generateRandomArgumentsArray: generateRandomArgumentsArray
+    generateRandomArgumentsArray: generateRandomArgumentsArray,
+    generateRandomTestFile: generateRandomTestFile
 };
+
+if (!module.parent) {
+    // this is the main module
+    try {
+        var args = process.argv.slice(2);
+        if (args.length !== 2 && args.length !== 3) {
+            console.log('Usage: <moduleName> <definitionFilepath> [OPTIONAL - randomTestOutputFilePath]');
+        } else {
+            var outputFilePath = 'ranTests/' + args[0] + 'RanTest.js';
+            if (args.length === 3) {
+                outputFilePath = args[2];
+            }
+            generateRandomTestFile(args[0], args[1], outputFilePath);
+        }
+    } catch(err) {
+        console.log(err.stack);
+    }
+}
+
 
 
