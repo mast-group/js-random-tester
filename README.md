@@ -19,6 +19,8 @@ node randomTestGenerator.js [libraryName] [pathForDefinitionFile] [OPTIONAL- pat
 node randomTestGenerator.js benchmark [DefinitelyTyped_ROOT_Folder]/benchmark/benchmark.d.ts
 ```
 
+(assuming that benchmark is already installed via NPM)
+
 ###Create new version of TypeScript definition file given an old definition file and new version of library
 
 ####Usage:
