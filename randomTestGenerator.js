@@ -22,7 +22,9 @@ function bootstrapRandomTesting(moduleName) {
                         kind = methods[i].returnType.properties.kind;
                         isArray = methods[i].returnType.array;
                     }
-                    createdTestSource += wrapTryCatch(kind, isArray, "variableName = " + mName + '.' +methodName + generateRandomArguments(methods[i].arguments) + ";");
+                    createdTestSource += wrapTryCatch(kind, isArray,
+                        "if(" + mName + '.' +methodName+" === undefined) {console.log('"+ methodName+" is not found in library but exists in definition file')} else {" +
+                        "variableName = " + mName + '.' +methodName + generateRandomArguments(methods[i].arguments) + ";}");
                 }
             }
         }
@@ -46,7 +48,9 @@ function bootstrapRandomTesting(moduleName) {
                         kind = methods[i].returnType.properties.kind;
                         isArray = methods[i].returnType.array;
                     }
-                    createdTestSource += wrapTryCatch(kind, isArray, "variableName = " + mName + '.' + methodName + generateRandomArguments(methods[i].arguments) + ";");
+                    createdTestSource += wrapTryCatch(kind, isArray,
+                        "if(" + mName + '.' +methodName+" === undefined) {console.log('"+ methodName+" is not found in library but exists in definition file')} else {" +
+                        "variableName = " + mName + '.' + methodName + generateRandomArguments(methods[i].arguments) + ";}");
                 }
             }
         }
@@ -60,7 +64,7 @@ function bootstrapRandomTesting(moduleName) {
                     if(skipModules.indexOf(moduleName) !== -1) {
                         createdTestSource += 'var '+ mName+ 'Obj = ' + mName + ';\n';
                     } else {
-                        createdTestSource += wrapTryCatch('var '+ mName+ 'Obj = new ' + mName + generateRandomArguments(curConst.arguments) + ";");
+                        createdTestSource += wrapTryCatch(undefined, undefined, 'var '+ mName+ 'Obj = new ' + mName + generateRandomArguments(curConst.arguments) + ";");
                     }
                     if(skipModules.indexOf(moduleName) !== -1|| curConst.returnType==='void') {
                         var curMethods = definitionStructure.methods;
@@ -83,14 +87,18 @@ function bootstrapRandomTesting(moduleName) {
                                     kind = curMethods[j].returnType.properties.kind;
                                     isArray = curMethods[j].returnType.array;
                                 }
-                                createdTestSource += wrapTryCatch(kind, isArray, "variableName = " + mName + '.' +methodName + generateRandomArguments(curMethods[j].arguments) + ";");
+                                createdTestSource += wrapTryCatch(kind, isArray,
+                                    "if(" + mName + '.' +methodName+" === undefined) {console.log('"+ methodName+" is not found in library but exists in definition file')} else {" +
+                                    "variableName = " + mName + '.' +methodName + generateRandomArguments(curMethods[j].arguments) + ";}");
                             } else {
                                 kind = undefined; isArray = undefined;
                                 if(validReturnType(curMethods[j].returnType)) {
                                     kind = curMethods[j].returnType.properties.kind;
                                     isArray = curMethods[j].returnType.array;
                                 }
-                                createdTestSource += wrapTryCatch(kind, isArray, "variableName = " + mName + 'Obj.' +methodName + generateRandomArguments(curMethods[j].arguments) + ";");
+                                createdTestSource += wrapTryCatch(kind, isArray,
+                                    "if(" + mName + 'Obj.' + methodName+" === undefined) {console.log('"+ methodName+" is not found in library but exists in definition file')} else {" +
+                                    "variableName = " + mName + 'Obj.' +methodName + generateRandomArguments(curMethods[j].arguments) + ";}");
                             }
                         }
                     }
@@ -112,7 +120,9 @@ function bootstrapRandomTesting(moduleName) {
                     kind = definitionStructure.methods[j].returnType.properties.kind;
                     isArray = definitionStructure.methods[j].returnType.array;
                 }
-                createdTestSource += wrapTryCatch(kind, isArray, "variableName = " + mName + '.' + definitionStructure.methods[j].name + generateRandomArguments(definitionStructure.methods[j].arguments) + ";");
+                createdTestSource += wrapTryCatch(kind, isArray,
+                    "if(" + mName + '.' +definitionStructure.methods[j].name+" === undefined) {console.log('"+ definitionStructure.methods[j].name+" is not found in library but exists in definition file')} else {" +
+                    "variableName = " + mName + '.' + definitionStructure.methods[j].name + generateRandomArguments(definitionStructure.methods[j].arguments) + ";}");
 
             }
         }
@@ -172,11 +182,11 @@ function generateRandomArgumentsArray(arguments) {
     for(var i=0; i<arguments.length; i++){
         var optional = arguments[i].optional;
         if(optional) {
-            if(util.randomBoolean() && !arguments[i].type.function) {
-                argumentsArray.push(generateValuesForArgument(arguments[i].type, arguments[i]));
-            } else {
-                i= arguments.length-1;
-            }
+            //if(util.randomBoolean() && !arguments[i].type.function) {
+            //    argumentsArray.push(generateValuesForArgument(arguments[i].type, arguments[i]));
+            //} else {
+            i= arguments.length-1;
+            //}
         } else {
             argumentsArray.push(generateValuesForArgument(arguments[i].type, arguments[i]));
         }
@@ -224,7 +234,15 @@ function generateValuesForArgument(type, argument){
                 argumentValue = util.randomAny();
             } else if (type.properties.kind === 'union'){
                 var unionTypes = type.properties.type;
-                var randomUnionType = unionTypes[util.randomInt(unionTypes.length-1)];
+                var randomUnionType =undefined;
+                for(var k=0; k<unionTypes.length;k++) {
+                    if(unionTypes[k].simple) {
+                        randomUnionType = unionTypes[k];
+                        k=unionTypes.length;
+                    }
+                }
+                if(randomUnionType===undefined)
+                    randomUnionType = unionTypes[util.randomInt(unionTypes.length - 1)];
                 if(randomUnionType!==undefined){
                     argumentValue = generateValuesForArgument(randomUnionType);
                 }
@@ -283,10 +301,21 @@ function wrapTryCatch(kind, isArray, newCode) {
         } else {
             typeCheck = "if(typeof variableName === '" + kind +"')"
         }
+        var wrongCode = newCode.replace(/"/g, "'");
+        var splitter ="but exists in definition file')} else {";
+        wrongCode = wrongCode.substring(newCode.indexOf(splitter)+ splitter.length);
+        wrongCode = wrongCode.substring(0, wrongCode.length-2);
+
         typeCheck += " {}\nelse{" +
-            "wrongDetails+=\"" + newCode.replace(/"/g, "'") + " : Type should be : " + kind + " found : \"+typeof variableName+\"\\n\"}";
+            "wrongDetails+=\"" + wrongCode + " : Return type should be : " + kind + " found : \"+typeof variableName+\"\\n\"}";
     }
-    return 'try{\n' +newCode + "\n"+ typeCheck +"} catch(err) { console.log(err.stack);}\n"
+    var returnCode = "try{\n" +newCode + "\n"+ typeCheck +"} catch(err) { ";
+    if(DEBUG_ENABLED) {
+        returnCode += "console.log(err.stack);}\n";
+    } else {
+        returnCode += "}\n";
+    }
+    return returnCode;
 }
 
 function validReturnType(returnType) {
@@ -301,8 +330,9 @@ function executeRandomTest(moduleName, df, filePath) {
     definitionStructure = df;
     mName = moduleName;
     if(definitionStructure) {
-        genTestCode = "\n\nvar "+ moduleName.replace(/-/g, "").replace(/\./g,"") + " = require ('" + moduleName + "');\n";
+        genTestCode = "\n\nvar "+ moduleName.replace(/-/g, "").replace(/\./g,"") + " = require ('" + moduleName + "');\nvar wrongDetails=''\n";
         fs.writeFileSync(filePath, genTestCode + bootstrapRandomTesting(moduleName));
+        fs.appendFileSync(filePath, "\nconsole.log(wrongDetails);\n");
     }
 }
 
@@ -322,6 +352,9 @@ module.exports = {
     generateRandomArgumentsArray: generateRandomArgumentsArray,
     generateRandomTestFile: generateRandomTestFile
 };
+
+//Constant to specify if we want to log all the errors while executing random tests. This will record it there is any mismat between library and definition file.
+var DEBUG_ENABLED = false;
 
 if (!module.parent) {
     // this is the main module

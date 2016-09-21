@@ -637,7 +637,7 @@ function detectExportedModule(currentVar, mbs, vd, sf) {
  * @returns {{object: boolean, array: boolean, function: boolean, properties: {}}}
  */
 function getTypeForProperty(nodeType) {
-    var results = {rawName: source.substring(ts.skipTrivia(source, nodeType.pos), nodeType.end), library:library, object: false, array: false, function: false, paranthesis: false, predicate: false, properties: {}};
+    var results = {rawName: source.substring(ts.skipTrivia(source, nodeType.pos), nodeType.end), library:library, simple:false, object: false, array: false, function: false, paranthesis: false, predicate: false, properties: {}};
     var prop = {};
     if (nodeType.kind === ts.SyntaxKind.FunctionType) {
         //Function type. Complex so just mark as function and skip
@@ -705,6 +705,7 @@ function getTypeForProperty(nodeType) {
             }
         } else {
             //Simple type
+            results.simple =true;
             prop ={kind:tokenValue};
         }
         results.properties = prop;
