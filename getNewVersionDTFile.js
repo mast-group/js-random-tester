@@ -10,6 +10,7 @@ var defFilePath;
 var projectName;
 var definitionStructure;
 var source;
+var removingIndexesMap = [];
 var removingIndexes = [];
 var addingMethods = {};
 
@@ -26,10 +27,11 @@ function checkMethod(object, method, isFunction) {
 }
 
 function removeCodeSegment(start, end) {
-    //if(removingIndexes.indexOf(start)===-1)
+    if (removingIndexesMap.indexOf(start + '_' + end) === -1) {
         removingIndexes.push(start);
-    //if(removingIndexes.indexOf(end)===-1)
         removingIndexes.push(end);
+        removingIndexesMap.push(start + '_' + end);
+    }
 }
 
 function checkNewMethods(object, methods, isStatic) {
