@@ -344,7 +344,7 @@ module.exports = {
 if (!module.parent) {
     // this is the main module
     var args = process.argv.slice(2);
-    if(args.length!==2) {
+    if(args.length!==2 && args.length!==3) {
         console.log('Usage: <moduleName> <definitionFilepath>');
     } else {
         var newSource = createNewVersionDTFile(args[0], args[1]);
